@@ -1,7 +1,9 @@
 using CityGame.CellRoads;
 using CityGame.Cars;
 using CityGame.Flow;
+using System.Collections.Generic;
 using CityGame.Roads;
+using CityGame.Save;
 using CityGame.Sectors;
 using UnityEngine;
 
@@ -51,16 +53,167 @@ namespace CityGame.Buildings
         public RoadGraph RoadNetwork { get; private set; }
         public Tool CurrentTool { get; private set; } = Tool.Pan;
 
+        [Tooltip("Как часто сохранять город, секунд")]
+        public float AutosaveSeconds = 20f;
+
+        public bool Started { get; private set; }
+
         RoadSystem _roads;
         CityDebugHud _hud;
+        MainMenu _menu;
         CellRoadGraphSync _graphSync;
-        CitySaveMenu _saveMenu;
+        BiomeMap _biomeMap;
+        readonly List<Component> _added = new List<Component>();
+        int _baseChildren;
+        float _saveTimer;
 
         void Start()
         {
             // Игра вертикальная. В редакторе настройка игнорируется, там выбери портретный размер окна Game.
             Screen.orientation = ScreenOrientation.Portrait;
+            _baseChildren = transform.childCount;
+            ShowMenu();
+        }
 
+        // --- меню, новая игра, загрузка ---
+
+        void ShowMenu()
+        {
+            Camera cam = Camera.main;
+            if (cam != null)
+            {
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = new Color32(0x2B, 0x31, 0x3A, 0xFF);
+            }
+
+            _menu = gameObject.AddComponent<MainMenu>();
+            _menu.Bind(this);
+        }
+
+        void CloseMenu()
+        {
+            if (_menu != null) Destroy(_menu);
+            _menu = null;
+        }
+
+        /// <summary>Новый город со случайным рельефом. Старое сохранение перезаписывается сразу.</summary>
+        public void NewGame()
+        {
+            if (Started) return;
+            CloseMenu();
+            SaveSystem.Delete();
+            StartGame(null, Random.Range(1, 1000000));
+            Save();
+        }
+
+        public void ContinueGame()
+        {
+            if (Started) return;
+            if (!SaveSystem.TryRead(out SaveData data)) return;
+            CloseMenu();
+            StartGame(data, data.seed);
+        }
+
+        /// <summary>Сохраняет и возвращается в меню.</summary>
+        public void ExitToMenu()
+        {
+            if (!Started) return;
+            Save();
+
+            foreach (Component c in _added)
+                if (c != null) Destroy(c);
+            _added.Clear();
+            for (int i = transform.childCount - 1; i >= _baseChildren; i--)
+                Destroy(transform.GetChild(i).gameObject);
+
+            Started = false;
+            Model = null;
+            RoadMap = null;
+            ShowMenu();
+        }
+
+        public void Save()
+        {
+            if (!Started) return;
+            SaveSystem.Write(Capture());
+            _saveTimer = 0f;
+        }
+
+        SaveData Capture()
+        {
+            var data = new SaveData { seed = _biomeMap.Seed, money = Economy.Money };
+            if (Rig != null && Rig.Cam != null)
+            {
+                data.camX = Rig.Cam.transform.position.x;
+                data.camY = Rig.Cam.transform.position.y;
+                data.camWidth = Rig.WorldWidth;
+            }
+
+            foreach (HexCoord h in Sectors.Open) data.openSectors.Add(new HexSave { q = h.Q, r = h.R });
+
+            var types = new Dictionary<Vector2Int, CellRoads.JunctionType>();
+            foreach (var kv in RoadMap.ExplicitTypes) types[kv.Key] = kv.Value;
+            foreach (var kv in RoadMap.Cells)
+            {
+                types.TryGetValue(kv.Key, out CellRoads.JunctionType t);
+                data.roads.Add(new RoadCellSave { x = kv.Key.x, y = kv.Key.y, mask = kv.Value, type = (int)t });
+            }
+
+            foreach (BuildingCell c in Model.Cells)
+                data.buildings.Add(new BuildingSave
+                {
+                    x = c.Pos.x, y = c.Pos.y, category = (int)c.Category, kind = (int)c.Kind, serial = c.Serial
+                });
+
+            return data;
+        }
+
+        void Apply(SaveData data)
+        {
+            var open = new List<HexCoord>();
+            foreach (HexSave h in data.openSectors) open.Add(new HexCoord(h.q, h.r));
+            Sectors.Load(open);
+
+            var masks = new Dictionary<Vector2Int, int>();
+            var types = new Dictionary<Vector2Int, CellRoads.JunctionType>();
+            foreach (RoadCellSave r in data.roads)
+            {
+                var cell = new Vector2Int(r.x, r.y);
+                masks[cell] = r.mask;
+                if (r.type != 0) types[cell] = (CellRoads.JunctionType)r.type;
+            }
+
+            RoadMap.Load(masks, types);
+
+            var cells = new List<BuildingCell>();
+            foreach (BuildingSave b in data.buildings)
+                cells.Add(new BuildingCell(new Vector2Int(b.x, b.y), (BuildingCategory)b.category, (ServiceKind)b.kind)
+                    { Serial = b.serial });
+            Model.Load(cells);
+
+            Economy.Money = data.money;
+            if (data.camWidth > 0f) Rig.SetView(new Vector2(data.camX, data.camY), data.camWidth);
+        }
+
+        void Update()
+        {
+            if (!Started) return;
+            _saveTimer += Time.unscaledDeltaTime;
+            if (_saveTimer >= AutosaveSeconds) Save();
+        }
+
+        void OnApplicationPause(bool paused)
+        {
+            if (paused) Save();
+        }
+
+        void OnApplicationQuit()
+        {
+            Save();
+        }
+
+        void StartGame(SaveData data, int seed)
+        {
             _roads = GetComponent<RoadSystem>();
             // Старое рисование дорог от руки отключено: дороги теперь по клеткам.
             _roads.Drawer.enabled = false;
@@ -71,7 +224,8 @@ namespace CityGame.Buildings
             _graphSync = new CellRoadGraphSync(RoadMap, RoadNetwork, CellSize);
 
             Sectors = new SectorMap(HexSize);
-            Biomes = new Biomes(new BiomeMap(), Sectors, Model, RoadMap, CellSize);
+            _biomeMap = new BiomeMap { Seed = seed };
+            Biomes = new Biomes(_biomeMap, Sectors, Model, RoadMap, CellSize);
 
             Coverage = new ServiceCoverage(Model);
             Economy = GetOrAdd<Economy>();
@@ -137,33 +291,11 @@ namespace CityGame.Buildings
             Tapper.IsPointerBlocked = _hud.IsPointerBlocked;
             Rig.IsPointerBlocked = _hud.IsPointerBlocked;
 
-            // Старт в режиме «Рука»: палец двигает карту. Нажатие на активный инструмент возвращает сюда.
-            Select(Tool.Pan);
-            _saveMenu = GetOrAdd<CitySaveMenu>();
-            _saveMenu.Bind(this);
-        }
+            Started = true;
+            if (data != null) Apply(data);
 
-        public void BeginNewCity()
-        {
-            Model.Clear();
-            RoadMap.Clear();
-            Sectors.RestoreOpen(new[] { new HexCoord(0, 0) });
-            Biomes.Map.Seed = Random.Range(1, int.MaxValue);
-            Economy.Money = 1000f;
-            Economy.enabled = true;
-            if (Rig.Cam != null) Rig.Cam.transform.position = new Vector3(0, 0, -10);
+            // Старт без инструмента: палец двигает карту. Повторный тап по активному инструменту возвращает сюда.
             Select(Tool.Pan);
-        }
-
-        public void SetMenuMode(bool menu)
-        {
-            Economy.enabled = !menu;
-            Rig.enabled = !menu;
-            _hud.enabled = !menu;
-            RoadDrawer.enabled = !menu && CurrentTool == Tool.Road;
-            JunctionTool.enabled = !menu && CurrentTool == Tool.Junction;
-            Placer.enabled = !menu && CurrentTool >= Tool.Residential && CurrentTool <= Tool.Erase;
-            Tapper.enabled = !menu && CurrentTool == Tool.Expand;
         }
 
         public void SelectService(ServiceKind kind)
@@ -175,7 +307,10 @@ namespace CityGame.Buildings
         T GetOrAdd<T>() where T : Component
         {
             var c = GetComponent<T>();
-            return c != null ? c : gameObject.AddComponent<T>();
+            if (c != null) return c;
+            c = gameObject.AddComponent<T>();
+            _added.Add(c);
+            return c;
         }
 
         public void Select(Tool tool)

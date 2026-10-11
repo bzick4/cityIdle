@@ -55,11 +55,12 @@ namespace CityGame.Sectors
             return true;
         }
 
-        public void RestoreOpen(IEnumerable<HexCoord> sectors)
+        /// <summary>Заменяет набор открытых секторов, одно событие Changed. Для загрузки сохранения.</summary>
+        public void Load(IEnumerable<HexCoord> open)
         {
             _open.Clear();
             _frontier.Clear();
-            foreach (var h in sectors) Add(h);
+            foreach (HexCoord h in open) Add(h);
             if (_open.Count == 0) Add(new HexCoord(0, 0));
             Changed?.Invoke();
         }

@@ -82,6 +82,21 @@ namespace CityGame.Buildings
             return true;
         }
 
+        /// <summary>Заменяет все здания разом, одно событие Rebuilt. Для загрузки сохранения.</summary>
+        public void Load(IEnumerable<BuildingCell> cells)
+        {
+            _cells.Clear();
+            _serial = 0;
+            foreach (BuildingCell c in cells)
+            {
+                _cells[c.Pos] = c;
+                if (c.Serial > _serial) _serial = c.Serial;
+            }
+
+            RebuildDistricts();
+            Rebuilt?.Invoke();
+        }
+
         public bool Remove(Vector2Int pos)
         {
             if (!_cells.TryGetValue(pos, out BuildingCell cell)) return false;
@@ -90,15 +105,6 @@ namespace CityGame.Buildings
             CellRemoved?.Invoke(cell);
             Rebuilt?.Invoke();
             return true;
-        }
-
-        public void Clear()
-        {
-            if (_cells.Count == 0) return;
-            _cells.Clear();
-            _serial = 0;
-            RebuildDistricts();
-            Rebuilt?.Invoke();
         }
 
         void RebuildDistricts()

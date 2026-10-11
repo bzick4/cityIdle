@@ -1,0 +1,83 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using UnityEngine;
+
+namespace CityGame.Save
+{
+    [Serializable] public class RoadCellSave { public int x, y, mask, type; }
+    [Serializable] public class BuildingSave { public int x, y, category, kind, serial; }
+    [Serializable] public class HexSave { public int q, r; }
+
+    /// <summary>Всё, что нужно для восстановления города. Деревья, машины и довольство считаются заново.</summary>
+    [Serializable]
+    public class SaveData
+    {
+        public int version = 1;
+        public int seed;
+        public float money;
+        public float camX, camY, camWidth;
+        public List<HexSave> openSectors = new List<HexSave>();
+        public List<RoadCellSave> roads = new List<RoadCellSave>();
+        public List<BuildingSave> buildings = new List<BuildingSave>();
+    }
+
+    /// <summary>Файл сохранения в папке данных приложения. Одно сохранение: новая игра его перезаписывает.</summary>
+    public static class SaveSystem
+    {
+        public const int CurrentVersion = 1;
+
+        static string PathFile => Path.Combine(Application.persistentDataPath, "city_save.json");
+
+        public static bool Exists => File.Exists(PathFile);
+
+        public static DateTime LastWrite => File.Exists(PathFile) ? File.GetLastWriteTime(PathFile) : DateTime.MinValue;
+
+        public static bool TryRead(out SaveData data)
+        {
+            data = null;
+            try
+            {
+                if (!File.Exists(PathFile)) return false;
+                data = JsonUtility.FromJson<SaveData>(File.ReadAllText(PathFile));
+                return data != null && data.version == CurrentVersion;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("Не удалось прочитать сохранение: " + e.Message);
+                data = null;
+                return false;
+            }
+        }
+
+        public static bool Write(SaveData data)
+        {
+            try
+            {
+                // Сначала во временный файл, потом подмена: обрыв посреди записи не портит старое сохранение.
+                string tmp = PathFile + ".tmp";
+                File.WriteAllText(tmp, JsonUtility.ToJson(data));
+                if (File.Exists(PathFile)) File.Delete(PathFile);
+                File.Move(tmp, PathFile);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("Не удалось сохранить: " + e.Message);
+                return false;
+            }
+        }
+
+        public static void Delete()
+        {
+            try
+            {
+                if (File.Exists(PathFile)) File.Delete(PathFile);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("Не удалось удалить сохранение: " + e.Message);
+            }
+        }
+    }
+}

@@ -340,6 +340,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CityGame.Buildings.CitySystem
   CellSize: 1
   HexSize: 5
+  AutosaveSeconds: 20
 --- !u!114 &1405709004
 MonoBehaviour:
   m_ObjectHideFlags: 0

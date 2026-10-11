@@ -178,6 +178,20 @@ namespace CityGame.CellRoads
             return list;
         }
 
+        /// <summary>Развилки с особым типом (не обычный перекрёсток). Нужны для сохранения.</summary>
+        public IEnumerable<KeyValuePair<Vector2Int, JunctionType>> ExplicitTypes => _types;
+
+        /// <summary>Заменяет все дороги разом, одно событие Changed. Для загрузки сохранения.</summary>
+        public void Load(IEnumerable<KeyValuePair<Vector2Int, int>> masks, IEnumerable<KeyValuePair<Vector2Int, JunctionType>> types)
+        {
+            _masks.Clear();
+            _types.Clear();
+            foreach (var kv in masks) _masks[kv.Key] = kv.Value;
+            foreach (var kv in types)
+                if (_masks.ContainsKey(kv.Key) && IsValid(kv.Key, kv.Value)) _types[kv.Key] = kv.Value;
+            Changed?.Invoke();
+        }
+
         public void SetType(Vector2Int cell, JunctionType type)
         {
             if (!_masks.ContainsKey(cell)) return;
@@ -212,22 +226,6 @@ namespace CityGame.CellRoads
 
             Changed?.Invoke();
         }
-
-        public void Clear()
-        {
-            _masks.Clear();
-            _types.Clear();
-            PreviewCell = null;
-            Changed?.Invoke();
-        }
-
-        public void RestoreCell(Vector2Int cell, int mask, JunctionType type)
-        {
-            _masks[cell] = mask;
-            if (type != JunctionType.Plain) _types[cell] = type;
-        }
-
-        public void FinishRestore() => Changed?.Invoke();
 
         public bool Remove(Vector2Int cell)
         {

@@ -43,6 +43,7 @@ namespace CityGame.Buildings
         GUIStyle _pill, _circle, _panel;
         GUIStyle _lblTile;
         Texture2D[] _icons;
+        bool _exitRequested;
         GUIStyle _lbl, _lblSmall, _lblSmallRight, _lblBig, _lblCenter, _lblShop;
 
         public void Bind(CitySystem city)
@@ -69,6 +70,14 @@ namespace CityGame.Buildings
             if (_icons != null)
                 foreach (Texture2D t in _icons)
                     if (t != null) Destroy(t);
+        }
+
+        void Update()
+        {
+            // Выход в меню разрушает этот объект, поэтому делаем его вне OnGUI.
+            if (!_exitRequested) return;
+            _exitRequested = false;
+            _city.ExitToMenu();
         }
 
         float Scale => Mathf.Max(0.5f, Mathf.Min(Screen.width / RefWidth, Screen.height / RefHeight));
@@ -107,7 +116,7 @@ namespace CityGame.Buildings
         // --- стили ---
 
         /// <summary>Скруглённый прямоугольник из текстуры: радиус равен половине стороны даёт круг/пилюлю.</summary>
-        static Texture2D RoundedTexture(int size, float radius)
+        internal static Texture2D RoundedTexture(int size, float radius)
         {
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
             {
@@ -132,7 +141,7 @@ namespace CityGame.Buildings
             return tex;
         }
 
-        static GUIStyle Tinted(Texture2D tex, Color color, int border)
+        internal static GUIStyle Tinted(Texture2D tex, Color color, int border)
         {
             var s = new GUIStyle();
             s.normal.background = tex;
@@ -142,7 +151,7 @@ namespace CityGame.Buildings
             return s;
         }
 
-        static GUIStyle Label(int size, TextAnchor align, FontStyle fontStyle = FontStyle.Normal)
+        internal static GUIStyle Label(int size, TextAnchor align, FontStyle fontStyle = FontStyle.Normal)
         {
             var s = new GUIStyle(GUI.skin.label)
             {
@@ -330,6 +339,7 @@ namespace CityGame.Buildings
             bool heat = _city.Heatmap.Visible;
             bool newHeat = GUI.Toggle(new Rect(x + 108f, y, 120f, 30f), heat, "Нагрузка", GUI.skin.button);
             if (newHeat != heat) _city.Heatmap.Visible = newHeat;
+            if (GUI.Button(new Rect(_popupRect.xMax - 110f, y, 100f, 30f), "В меню")) _exitRequested = true;
             y += 38f;
 
             for (int i = 0; i < rows; i++)

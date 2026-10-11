@@ -53,6 +53,15 @@ namespace CityGame
             FitWidth();
         }
 
+        /// <summary>Положение и масштаб камеры (для загрузки сохранения).</summary>
+        public void SetView(Vector2 position, float worldWidth)
+        {
+            if (Cam == null) return;
+            WorldWidth = Mathf.Clamp(worldWidth, MinWorldWidth, MaxWorldWidth);
+            Cam.transform.position = new Vector3(position.x, position.y, -10f);
+            FitWidth();
+        }
+
         void FitWidth()
         {
             if (Cam == null) return;
