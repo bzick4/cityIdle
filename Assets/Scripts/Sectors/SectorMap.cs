@@ -55,6 +55,15 @@ namespace CityGame.Sectors
             return true;
         }
 
+        public void RestoreOpen(IEnumerable<HexCoord> sectors)
+        {
+            _open.Clear();
+            _frontier.Clear();
+            foreach (var h in sectors) Add(h);
+            if (_open.Count == 0) Add(new HexCoord(0, 0));
+            Changed?.Invoke();
+        }
+
         void Add(HexCoord h)
         {
             _open.Add(h);

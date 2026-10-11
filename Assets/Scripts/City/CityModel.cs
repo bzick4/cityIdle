@@ -92,6 +92,15 @@ namespace CityGame.Buildings
             return true;
         }
 
+        public void Clear()
+        {
+            if (_cells.Count == 0) return;
+            _cells.Clear();
+            _serial = 0;
+            RebuildDistricts();
+            Rebuilt?.Invoke();
+        }
+
         void RebuildDistricts()
         {
             _districts.Clear();

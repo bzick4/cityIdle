@@ -213,6 +213,22 @@ namespace CityGame.CellRoads
             Changed?.Invoke();
         }
 
+        public void Clear()
+        {
+            _masks.Clear();
+            _types.Clear();
+            PreviewCell = null;
+            Changed?.Invoke();
+        }
+
+        public void RestoreCell(Vector2Int cell, int mask, JunctionType type)
+        {
+            _masks[cell] = mask;
+            if (type != JunctionType.Plain) _types[cell] = type;
+        }
+
+        public void FinishRestore() => Changed?.Invoke();
+
         public bool Remove(Vector2Int cell)
         {
             if (!_masks.TryGetValue(cell, out int mask)) return false;

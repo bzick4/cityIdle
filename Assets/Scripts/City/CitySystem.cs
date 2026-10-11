@@ -54,6 +54,7 @@ namespace CityGame.Buildings
         RoadSystem _roads;
         CityDebugHud _hud;
         CellRoadGraphSync _graphSync;
+        CitySaveMenu _saveMenu;
 
         void Start()
         {
@@ -138,6 +139,31 @@ namespace CityGame.Buildings
 
             // Старт в режиме «Рука»: палец двигает карту. Нажатие на активный инструмент возвращает сюда.
             Select(Tool.Pan);
+            _saveMenu = GetOrAdd<CitySaveMenu>();
+            _saveMenu.Bind(this);
+        }
+
+        public void BeginNewCity()
+        {
+            Model.Clear();
+            RoadMap.Clear();
+            Sectors.RestoreOpen(new[] { new HexCoord(0, 0) });
+            Biomes.Map.Seed = Random.Range(1, int.MaxValue);
+            Economy.Money = 1000f;
+            Economy.enabled = true;
+            if (Rig.Cam != null) Rig.Cam.transform.position = new Vector3(0, 0, -10);
+            Select(Tool.Pan);
+        }
+
+        public void SetMenuMode(bool menu)
+        {
+            Economy.enabled = !menu;
+            Rig.enabled = !menu;
+            _hud.enabled = !menu;
+            RoadDrawer.enabled = !menu && CurrentTool == Tool.Road;
+            JunctionTool.enabled = !menu && CurrentTool == Tool.Junction;
+            Placer.enabled = !menu && CurrentTool >= Tool.Residential && CurrentTool <= Tool.Erase;
+            Tapper.enabled = !menu && CurrentTool == Tool.Expand;
         }
 
         public void SelectService(ServiceKind kind)
