@@ -13,6 +13,8 @@ namespace CityGame.Buildings
     {
         Pan,
         Road,
+        Highway,
+        OneWay,
         Junction,
         Residential,
         Commercial,
@@ -44,6 +46,7 @@ namespace CityGame.Buildings
         public CameraRig Rig { get; private set; }
         public CellRoadMap RoadMap { get; private set; }
         public CellRoadDrawer RoadDrawer { get; private set; }
+        public HighwayLaneTool HighwayTool { get; private set; }
         public JunctionTapper JunctionTool { get; private set; }
         public Biomes Biomes { get; private set; }
         public ServiceCoverage Coverage { get; private set; }
@@ -52,6 +55,7 @@ namespace CityGame.Buildings
         public ServiceKind CurrentService { get; private set; } = ServiceKind.Ambulance;
         public RoadGraph RoadNetwork { get; private set; }
         public Tool CurrentTool { get; private set; } = Tool.Pan;
+        public CityTutorial Tutorial => _tutorial;
 
         [Tooltip("Как часто сохранять город, секунд")]
         public float AutosaveSeconds = 20f;
@@ -60,6 +64,7 @@ namespace CityGame.Buildings
 
         RoadSystem _roads;
         CityDebugHud _hud;
+        CityTutorial _tutorial;
         MainMenu _menu;
         CellRoadGraphSync _graphSync;
         BiomeMap _biomeMap;
@@ -100,10 +105,12 @@ namespace CityGame.Buildings
         public void NewGame()
         {
             if (Started) return;
+            bool shouldTutorial = (!SaveSystem.Exists && !CityTutorial.IsCompleted) || CityTutorial.IsInProgress;
             CloseMenu();
             SaveSystem.Delete();
             StartGame(null, Random.Range(1, 1000000));
             Save();
+            if (shouldTutorial) _tutorial.BeginOrResume();
         }
 
         public void ContinueGame()
@@ -112,6 +119,7 @@ namespace CityGame.Buildings
             if (!SaveSystem.TryRead(out SaveData data)) return;
             CloseMenu();
             StartGame(data, data.seed);
+            if (CityTutorial.IsInProgress) _tutorial.BeginOrResume();
         }
 
         /// <summary>Сохраняет и возвращается в меню.</summary>
@@ -159,6 +167,13 @@ namespace CityGame.Buildings
                 data.roads.Add(new RoadCellSave { x = kv.Key.x, y = kv.Key.y, mask = kv.Value, type = (int)t });
             }
 
+            foreach (var kv in RoadMap.HighwayDirections)
+                data.highway.Add(new HighwayCellSave { x = kv.Key.x, y = kv.Key.y, heading = kv.Value,
+                    kind = (RoadMap.IsRampAt(kv.Key) ? 1 : 0) |
+                           (RoadMap.IsStandaloneHighwayAt(kv.Key) ? 2 : 0) |
+                           (RoadMap.IsOwnedHighwayAt(kv.Key) ? 4 : 0),
+                    originalMask = RoadMap.StandaloneOriginalMaskAt(kv.Key) });
+
             foreach (BuildingCell c in Model.Cells)
                 data.buildings.Add(new BuildingSave
                 {
@@ -176,6 +191,11 @@ namespace CityGame.Buildings
 
             var masks = new Dictionary<Vector2Int, int>();
             var types = new Dictionary<Vector2Int, CellRoads.JunctionType>();
+            var highway = new Dictionary<Vector2Int, int>();
+            var ramps = new HashSet<Vector2Int>();
+            var standaloneHighways = new HashSet<Vector2Int>();
+            var ownedHighways = new HashSet<Vector2Int>();
+            var highwayOriginalMasks = new Dictionary<Vector2Int, int>();
             foreach (RoadCellSave r in data.roads)
             {
                 var cell = new Vector2Int(r.x, r.y);
@@ -183,7 +203,19 @@ namespace CityGame.Buildings
                 if (r.type != 0) types[cell] = (CellRoads.JunctionType)r.type;
             }
 
-            RoadMap.Load(masks, types);
+            if (data.highway != null)
+                foreach (HighwayCellSave h in data.highway)
+                    if (h != null)
+                    {
+                        var cell = new Vector2Int(h.x, h.y);
+                        highway[cell] = h.heading;
+                        if ((h.kind & 1) != 0) ramps.Add(cell);
+                        if ((h.kind & 2) != 0) standaloneHighways.Add(cell);
+                        if ((h.kind & 4) != 0) ownedHighways.Add(cell);
+                        if ((h.kind & 2) != 0) highwayOriginalMasks[cell] = h.originalMask;
+                    }
+
+            RoadMap.Load(masks, types, highway, ramps, standaloneHighways, ownedHighways, highwayOriginalMasks);
 
             var cells = new List<BuildingCell>();
             foreach (BuildingSave b in data.buildings)
@@ -257,6 +289,10 @@ namespace CityGame.Buildings
             RoadDrawer.CellSize = CellSize;
             RoadDrawer.Bind(RoadMap, Model, Sectors, Economy);
             RoadDrawer.CostFactorAt = Biomes.RoadCostFactor;
+            HighwayTool = GetOrAdd<HighwayLaneTool>();
+            HighwayTool.CellSize = CellSize;
+            HighwayTool.Bind(RoadMap, Model, Sectors, Economy);
+            HighwayTool.CostFactorAt = Biomes.RoadCostFactor;
             var bridges = GetOrAdd<BridgeRenderer>();
             bridges.CellSize = CellSize;
             bridges.Bind(RoadMap, Biomes);
@@ -284,8 +320,11 @@ namespace CityGame.Buildings
 
             _hud = GetOrAdd<CityDebugHud>();
             _hud.Bind(this);
+            _tutorial = GetOrAdd<CityTutorial>();
+            _tutorial.Bind(this);
 
             RoadDrawer.IsPointerBlocked = _hud.IsPointerBlocked;
+            HighwayTool.IsPointerBlocked = _hud.IsPointerBlocked;
             Placer.IsPointerBlocked = _hud.IsPointerBlocked;
             JunctionTool.IsPointerBlocked = _hud.IsPointerBlocked;
             Tapper.IsPointerBlocked = _hud.IsPointerBlocked;
@@ -319,6 +358,8 @@ namespace CityGame.Buildings
             bool build = tool >= Tool.Residential && tool <= Tool.Erase;
 
             RoadDrawer.enabled = tool == Tool.Road;
+            HighwayTool.enabled = tool == Tool.Highway || tool == Tool.OneWay;
+            HighwayTool.OneWayMode = tool == Tool.OneWay;
             JunctionTool.enabled = tool == Tool.Junction;
             Placer.enabled = build;
             Tapper.enabled = tool == Tool.Expand;

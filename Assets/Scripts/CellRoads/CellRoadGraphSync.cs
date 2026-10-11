@@ -66,6 +66,13 @@ namespace CityGame.CellRoads
             return Side.Count(_map.Mask(cell)) == 4 && JunctionSpecs.IsOverpass(_map.TypeAt(cell));
         }
 
+        bool IsRoadModeBoundary(Vector2Int a, Vector2Int b)
+        {
+            HighwayLane x = _map.LaneAt(a);
+            HighwayLane y = _map.LaneAt(b);
+            return x.Active != y.Active || (x.Active && y.Active && x.OneWay != y.OneWay);
+        }
+
         RoadNode NodeAt(Vector2Int cell, Dictionary<Vector2Int, RoadNode> nodes)
         {
             if (!nodes.TryGetValue(cell, out RoadNode n))
@@ -99,11 +106,12 @@ namespace CityGame.CellRoads
             HashSet<(Vector2Int, int)> visited)
         {
             var pts = new List<Vector2> { Center(start) };
+            var edgeCells = new List<Vector2Int> { start };
             Vector2Int cur = start;
             int dir = firstSide;
             visited.Add((cur, dir));
 
-            int interior = 0, laneCells = 0, fwd = 0, bwd = 0;
+            int interior = 0, laneCells = 0, highwayCells = 0, fwd = 0, bwd = 0;
 
             int guard = _map.Count * 4 + 8;
             while (guard-- > 0)
@@ -115,22 +123,42 @@ namespace CityGame.CellRoads
 
                 int nextMask = _map.Mask(next);
                 bool overpass = IsOverpass(next);
-                bool isNode = (Side.Count(nextMask) != 2 && !overpass) || next == start;
+                bool modeBoundary = !overpass && Side.Count(nextMask) == 2 &&
+                                    Side.Count(_map.Mask(cur)) == 2 && IsRoadModeBoundary(cur, next);
+                bool isNode = (Side.Count(nextMask) != 2 && !overpass) || next == start || modeBoundary;
                 if (isNode)
                 {
                     pts.Add(Center(next));
-                    Finish(start, next, pts, nodes, MakeTraits(interior, laneCells, fwd, bwd));
+                    edgeCells.Add(next);
+                    Traits traits = modeBoundary
+                        ? MakeBoundaryTraits(cur, next, dir)
+                        : MakeTraits(interior, laneCells, highwayCells, fwd, bwd);
+                    if (IsStandaloneHighwayPath(edgeCells))
+                    {
+                        traits = MakeStandaloneTraits(edgeCells, dir);
+                        pts = SmoothCellPath(edgeCells);
+                    }
+                    Finish(start, next, pts, nodes, traits);
                     return;
                 }
 
                 int exit = overpass ? Side.Opposite(incoming) : nextMask & ~incoming;
                 AppendInterior(pts, next, incoming, exit);
+                edgeCells.Add(next);
 
                 interior++;
-                HighwayLane lane = overpass ? default : _map.LaneAt(next);
-                if (lane.Active)
+                // Направленная полоса может проходить по эстакаде. Сам узел рисуется как мост,
+                // но граф сохраняет направление и односторонность продолжающегося шоссе.
+                HighwayLane lane = _map.LaneAt(next);
+                // В клетке моста LaneAt возвращает направление дороги, которая уже была
+                // размечена в этой клетке. При поперечном проезде это направление относится
+                // к другой оси и не должно задавать движение текущего ребра.
+                bool laneOnThisPass = lane.Active &&
+                    (SameAxis(lane.Heading, incoming) || SameAxis(lane.Heading, exit));
+                if (laneOnThisPass)
                 {
                     laneCells++;
+                    if (!lane.OneWay) highwayCells++;
                     if (exit == lane.Heading) fwd++;
                     else bwd++;
                 }
@@ -141,6 +169,11 @@ namespace CityGame.CellRoads
             }
         }
 
+        static bool SameAxis(int a, int b)
+        {
+            return a == b || a == Side.Opposite(b);
+        }
+
         struct Traits
         {
             public int OneWay;
@@ -148,24 +181,46 @@ namespace CityGame.CellRoads
             public float Capacity;
         }
 
+        Traits MakeBoundaryTraits(Vector2Int from, Vector2Int to, int direction)
+        {
+            HighwayLane lane = _map.LaneAt(from);
+            bool atFrom = lane.Active;
+            if (!lane.Active) lane = _map.LaneAt(to);
+            if (!lane.Active) return new Traits { OneWay = 0, Speed = 1f, Capacity = 1f };
+
+            bool followsRoute;
+            if (atFrom) followsRoute = lane.Heading == direction;
+            else
+            {
+                int incoming = Side.Opposite(direction);
+                int exit = _map.Mask(to) & ~incoming;
+                followsRoute = lane.Heading == exit;
+            }
+
+            int oneWay = followsRoute ? 1 : -1;
+            return new Traits
+            {
+                OneWay = oneWay,
+                Speed = lane.OneWay ? 1f : HighwaySpecs.SpeedFactor,
+                Capacity = lane.OneWay ? 1f : HighwaySpecs.CapacityFactor
+            };
+        }
+
         /// <summary>
         /// Шоссе по цепочке клеток. Скорость растёт пропорционально доле клеток-полос.
-        /// Ребро становится односторонним, только если вся цепочка идёт по полосам шоссе в одну сторону.
+        /// Переходные обычные клетки на концах наследуют направление трассы, пока не встретится узел.
         /// </summary>
-        static Traits MakeTraits(int interior, int laneCells, int fwd, int bwd)
+        static Traits MakeTraits(int interior, int laneCells, int highwayCells, int fwd, int bwd)
         {
             var t = new Traits { OneWay = 0, Speed = 1f, Capacity = 1f };
             if (interior == 0 || laneCells == 0) return t;
 
-            float f = (float)laneCells / interior;
+            float f = (float)highwayCells / interior;
             t.Speed = 1f / ((1f - f) + f / HighwaySpecs.SpeedFactor);
 
-            if (laneCells == interior)
-            {
-                t.Capacity = HighwaySpecs.CapacityFactor;
-                if (fwd > 0 && bwd == 0) t.OneWay = 1;
-                else if (bwd > 0 && fwd == 0) t.OneWay = -1;
-            }
+            t.Capacity = 1f + f * (HighwaySpecs.CapacityFactor - 1f);
+            if (fwd > 0 && bwd == 0) t.OneWay = 1;
+            else if (bwd > 0 && fwd == 0) t.OneWay = -1;
 
             return t;
         }
@@ -176,6 +231,55 @@ namespace CityGame.CellRoads
             e.OneWay = t.OneWay;
             e.SpeedFactor = t.Speed;
             e.CapacityFactor = t.Capacity;
+        }
+
+        bool IsStandaloneHighwayPath(List<Vector2Int> cells)
+        {
+            if (cells.Count < 2) return false;
+            bool oneWay = _map.LaneAt(cells[0]).OneWay;
+            for (int i = 0; i < cells.Count; i++)
+            {
+                HighwayLane lane = _map.LaneAt(cells[i]);
+                if (!lane.Active || !lane.Standalone || lane.OneWay != oneWay) return false;
+            }
+            return true;
+        }
+
+        Traits MakeStandaloneTraits(List<Vector2Int> cells, int firstDirection)
+        {
+            HighwayLane lane = _map.LaneAt(cells[0]);
+            bool followsRoute = lane.Heading == firstDirection;
+            return new Traits
+            {
+                OneWay = followsRoute ? 1 : -1,
+                Speed = lane.OneWay ? 1f : HighwaySpecs.SpeedFactor,
+                Capacity = lane.OneWay ? 1f : HighwaySpecs.CapacityFactor
+            };
+        }
+
+        List<Vector2> SmoothCellPath(List<Vector2Int> cells)
+        {
+            var centers = new List<Vector2>(cells.Count);
+            for (int i = 0; i < cells.Count; i++) centers.Add(Center(cells[i]));
+            var result = new List<Vector2>();
+            const int steps = 10;
+            for (int i = 0; i + 1 < centers.Count; i++)
+            {
+                Vector2 p0 = i > 0 ? centers[i - 1] : centers[i];
+                Vector2 p1 = centers[i];
+                Vector2 p2 = centers[i + 1];
+                Vector2 p3 = i + 2 < centers.Count ? centers[i + 2] : p2;
+                for (int step = 0; step < steps; step++)
+                {
+                    float t = step / (float)steps;
+                    float t2 = t * t, t3 = t2 * t;
+                    result.Add(0.5f * ((2f * p1) + (-p0 + p2) * t +
+                        (2f * p0 - 5f * p1 + 4f * p2 - p3) * t2 +
+                        (-p0 + 3f * p1 - 3f * p2 + p3) * t3));
+                }
+            }
+            result.Add(centers[centers.Count - 1]);
+            return result;
         }
 
         void Finish(Vector2Int a, Vector2Int b, List<Vector2> pts, Dictionary<Vector2Int, RoadNode> nodes, Traits traits)

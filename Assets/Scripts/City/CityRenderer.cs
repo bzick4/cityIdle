@@ -18,7 +18,7 @@ namespace CityGame.Buildings
         [Tooltip("Ширина контура, доля клетки")]
         public float RimWidth = 0.05f;
         [Tooltip("Ширина свечения, доля клетки")]
-        public float GlowWidth = 0.22f;
+        public float GlowWidth = 0.16f;
         public int SortingOrder = -10;
 
         CityModel _model;
@@ -126,7 +126,7 @@ namespace CityGame.Buildings
             float sat = merges ? Mathf.Clamp01(d.Satisfaction) : 1f;
 
             // 1. Свечение по периметру. Довольный район светится, недовольный нет.
-            float glowA = merges ? Mathf.Lerp(0.04f, 0.5f, sat) : 0.32f;
+            float glowA = merges ? Mathf.Lerp(0.03f, 0.32f, sat) : 0.32f;
             Color glow = Lighten(body, 0.45f);
             Color glowIn = new Color(glow.r, glow.g, glow.b, glowA);
             Color glowOut = new Color(glow.r, glow.g, glow.b, 0f);

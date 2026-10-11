@@ -62,9 +62,9 @@ namespace CityGame.Sectors
                     float r = cs * (0.22f + ((m >> 16) & 0xFF) / 255f * 0.10f);
                     Vector2 p = center + new Vector2(jx, jy);
 
-                    _batch.Disc(p + new Vector2(0.05f, -0.06f) * cs, r, 14, Shadow);
-                    _batch.Disc(p, r, 14, Crown);
-                    _batch.Disc(p + new Vector2(-0.35f, 0.4f) * r, r * 0.55f, 10, Light);
+                    _batch.Disc(p + new Vector2(0.05f, -0.06f) * cs, r, 24, Shadow);
+                    _batch.Disc(p, r, 24, Crown);
+                    _batch.Disc(p + new Vector2(-0.35f, 0.4f) * r, r * 0.55f, 16, Light);
                 }
             }
 

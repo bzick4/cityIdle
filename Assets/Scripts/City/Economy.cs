@@ -25,9 +25,12 @@ namespace CityGame.Buildings
 
         [Tooltip("Цена одной клетки дороги")]
         public float RoadCostPerCell = 5f;
+        [Tooltip("Цена одной клетки самостоятельного шоссе")]
+        public float HighwayCostPerCell = 10f;
 
-        [Tooltip("Цена кольца и цена эстакады")]
+        [Tooltip("Цена малого кольца, кольца шоссе и эстакады")]
         public float RoundaboutCost = 50f;
+        public float HighwayRoundaboutCost = 140f;
         public float OverpassCost = 100f;
 
         [Tooltip("Минимальный доход в секунду, идёт всегда")]

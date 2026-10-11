@@ -10,7 +10,7 @@ namespace CityGame.CellRoads
     /// Режим «Развилка». Тап по клетке, где сходятся три или четыре дороги, выбирает её: клетка получает рамку,
     /// а интерфейс показывает варианты. Выбранный вариант виден на карте сразу, но деньги списываются
     /// только по кнопке «Применить». «Отмена» или другой инструмент возвращают всё как было.
-    /// Платим разницу цены: перекрёсток бесплатно, кольцо 50, мост 100; со моста на кольцо и между мостами доплаты нет.
+    /// Платим разницу цены: перекрёсток бесплатно, малое кольцо 50, кольцо шоссе 140, мост 100.
     /// </summary>
     public sealed class JunctionTapper : MonoBehaviour
     {
@@ -50,6 +50,7 @@ namespace CityGame.CellRoads
             switch (t)
             {
                 case JunctionType.Roundabout: return _economy.RoundaboutCost;
+                case JunctionType.HighwayRoundabout: return _economy.HighwayRoundaboutCost;
                 case JunctionType.Overpass:
                 case JunctionType.OverpassVertical: return _economy.OverpassCost;
                 default: return 0f;
@@ -60,7 +61,22 @@ namespace CityGame.CellRoads
         public float CostFor(JunctionType target)
         {
             if (!Selected.HasValue) return 0f;
-            return Mathf.Max(0f, PriceOf(target) - PriceOf(Current));
+            Vector2Int cell = Selected.Value;
+            Vector2Int? currentCompanion = JunctionSpecs.IsOverpass(Current)
+                ? _map.OverpassCompanionAt(cell, Current)
+                : null;
+            Vector2Int? targetCompanion = JunctionSpecs.IsOverpass(target)
+                ? _map.OverpassCompanionAt(cell, target)
+                : null;
+
+            float currentPrice = PriceOf(Current);
+            Vector2Int? pricedCompanion = currentCompanion ?? targetCompanion;
+            if (pricedCompanion.HasValue)
+                currentPrice += PriceOf(_map.TypeAt(pricedCompanion.Value));
+
+            float targetPrice = PriceOf(target);
+            if (targetCompanion.HasValue) targetPrice += PriceOf(target);
+            return Mathf.Max(0f, targetPrice - currentPrice);
         }
 
         public List<JunctionType> Available()
@@ -88,10 +104,22 @@ namespace CityGame.CellRoads
 
             Vector2Int cell = Selected.Value;
             JunctionType type = Pending;
+            var changes = new List<KeyValuePair<Vector2Int, JunctionType>>();
+            changes.Add(new KeyValuePair<Vector2Int, JunctionType>(cell, type));
+            Vector2Int? companion = JunctionSpecs.IsOverpass(type)
+                ? _map.OverpassCompanionAt(cell, type)
+                : JunctionSpecs.IsOverpass(Current) ? _map.OverpassCompanionAt(cell, Current) : null;
+            if (companion.HasValue)
+            {
+                JunctionType companionType = JunctionSpecs.IsOverpass(type) ? type : JunctionType.Plain;
+                changes.Add(new KeyValuePair<Vector2Int, JunctionType>(companion.Value, companionType));
+            }
             Selected = null;
             _map.ClearPreview();
-            _map.SetType(cell, type);
-            Message?.Invoke(JunctionSpecs.Title(type));
+            _map.SetTypes(changes.ToArray());
+            Message?.Invoke(companion.HasValue && JunctionSpecs.IsOverpass(type)
+                ? "Эстакада через обе полосы шоссе"
+                : JunctionSpecs.Title(type));
         }
 
         public void Cancel()

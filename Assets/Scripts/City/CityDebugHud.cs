@@ -8,10 +8,9 @@ namespace CityGame.Buildings
     /// Временный интерфейс на IMGUI под вертикальный телефон. Весь интерфейс внизу, под большим пальцем,
     /// потому что сверху у телефонов вырез и «остров».
     ///
-    /// Внизу полоска: слева круглая кнопка «магазин», справа бюджет, доход и текущий инструмент.
-    /// Нажатие на кнопку «магазин» открывает над полоской панель выбора, повторное нажатие закрывает.
-    /// Нажатие на сам бюджет открывает панель с районами, переключателями и отладкой.
-    /// Панели выбора службы и развилки встают над ними, пока нужны.
+    /// Внизу полоска: слева круглая кнопка меню, справа бюджет, доход и текущий инструмент.
+    /// Компактное меню показывает категории районов, дорог и служб с отдельными страницами.
+    /// Нажатие на бюджет открывает панель города и отладки; выбор развилки и шоссе показывает контекстные панели.
     /// Раскладка рассчитана на ширину 420 условных единиц, масштаб по ширине экрана, учтена safe area.
     /// Цвета временные.
     /// </summary>
@@ -28,23 +27,28 @@ namespace CityGame.Buildings
         public Color PanelColor = new Color32(0xE4, 0xE4, 0xE4, 0xF2);
 
         enum Popup { None, Tools, Info }
+        enum ToolPage { Home, Districts, Roads, Services }
 
         CitySystem _city;
         Popup _popup = Popup.None;
+        ToolPage _toolPage = ToolPage.Home;
         string _toast = "";
         float _toastUntil;
         Rect _barRect;
         Rect _popupRect;
         Rect _dialogRect;
         Rect _junctionRect;
-        Rect _serviceRect;
+        Rect _highwayRect;
 
         Texture2D _pillTex, _circleTex, _panelTex;
         GUIStyle _pill, _circle, _panel;
         GUIStyle _lblTile;
         Texture2D[] _icons;
+        Texture2D[] _serviceIcons;
+        Texture2D[] _junctionIcons;
+        GUIStyle _lblCard, _lblMenuTitle, _lblMenuCategory;
         bool _exitRequested;
-        GUIStyle _lbl, _lblSmall, _lblSmallRight, _lblBig, _lblCenter, _lblShop;
+        GUIStyle _lbl, _lblSmall, _lblSmallRight, _lblBig, _lblCenter, _lblShop, _lblAction;
 
         public void Bind(CitySystem city)
         {
@@ -60,6 +64,12 @@ namespace CityGame.Buildings
                     _toast = text;
                     _toastUntil = Time.unscaledTime + 1.8f;
                 };
+            if (_city.HighwayTool != null)
+                _city.HighwayTool.Message += text =>
+                {
+                    _toast = text;
+                    _toastUntil = Time.unscaledTime + 1.8f;
+                };
         }
 
         void OnDestroy()
@@ -70,6 +80,14 @@ namespace CityGame.Buildings
             if (_icons != null)
                 foreach (Texture2D t in _icons)
                     if (t != null) Destroy(t);
+            DestroyIcons(_serviceIcons);
+            DestroyIcons(_junctionIcons);
+        }
+
+        static void DestroyIcons(Texture2D[] icons)
+        {
+            if (icons == null) return;
+            foreach (Texture2D t in icons) if (t != null) Destroy(t);
         }
 
         void Update()
@@ -87,15 +105,17 @@ namespace CityGame.Buildings
         {
             var gui = new Vector2(screen.x, Screen.height - screen.y) / Scale;
             return _barRect.Contains(gui) || _popupRect.Contains(gui) ||
+                   (_city != null && _city.Tutorial != null && _city.Tutorial.Contains(screen)) ||
                    (_city != null && _city.Tapper != null && _city.Tapper.HasPending && _dialogRect.Contains(gui)) ||
-                   (_city != null && _city.JunctionTool != null && _city.JunctionTool.HasSelection &&
+                   (_popup != Popup.Tools && _city != null && _city.JunctionTool != null && _city.JunctionTool.HasSelection &&
                     _junctionRect.Contains(gui)) ||
-                   (_city != null && _city.CurrentTool == Tool.Service && _serviceRect.Contains(gui));
+                   (_popup != Popup.Tools && _city != null && (_city.CurrentTool == Tool.Highway || _city.CurrentTool == Tool.OneWay) &&
+                    _highwayRect.Contains(gui));
         }
 
         static readonly string[] Names =
         {
-            "нет", "Дорога", "Развилка", "Жильё", "Торговля", "Промышл.", "Служба", "Снести", "Расширить"
+            "нет", "Дорога", "Шоссе", "Одностор.", "Развилка", "Жильё", "Торговля", "Промышл.", "Служба", "Снести", "Расширить"
         };
 
         string LabelFor(Tool tool)
@@ -104,7 +124,10 @@ namespace CityGame.Buildings
             switch (tool)
             {
                 case Tool.Road: return name + "\n" + _city.Economy.RoadCostPerCell + "/кл";
-                case Tool.Junction: return name + "\n" + _city.Economy.RoundaboutCost + "/" + _city.Economy.OverpassCost;
+                case Tool.Highway: return name + "\n" + _city.Economy.HighwayCostPerCell + "/кл";
+                case Tool.OneWay: return name + "\n" + _city.Economy.RoadCostPerCell + "/кл";
+                case Tool.Junction: return name + "\n" + _city.Economy.RoundaboutCost + "/" +
+                                           _city.Economy.HighwayRoundaboutCost + "/" + _city.Economy.OverpassCost;
                 case Tool.Residential: return name + "\n" + _city.Economy.BuildCost[(int)BuildingCategory.Residential];
                 case Tool.Commercial: return name + "\n" + _city.Economy.BuildCost[(int)BuildingCategory.Commercial];
                 case Tool.Industrial: return name + "\n" + _city.Economy.BuildCost[(int)BuildingCategory.Industrial];
@@ -173,17 +196,26 @@ namespace CityGame.Buildings
             int toolCount = Enum.GetValues(typeof(Tool)).Length - 1;
             _icons = new Texture2D[toolCount];
             for (int i = 0; i < toolCount; i++) _icons[i] = ToolIcons.Make((Tool)(i + 1));
+            _serviceIcons = new Texture2D[Enum.GetValues(typeof(ServiceKind)).Length];
+            for (int i = 0; i < _serviceIcons.Length; i++) _serviceIcons[i] = ToolIcons.MakeService((ServiceKind)i);
+            _junctionIcons = new Texture2D[Enum.GetValues(typeof(JunctionType)).Length];
+            for (int i = 0; i < _junctionIcons.Length; i++) _junctionIcons[i] = ToolIcons.MakeJunction((JunctionType)i);
             _pill = Tinted(_pillTex, BarColor, 32);
             _circle = Tinted(_circleTex, ShopColor, 32);
             _panel = Tinted(_panelTex, PanelColor, 16);
             _lbl = Label(14, TextAnchor.UpperLeft);
             _lblTile = Label(10, TextAnchor.UpperCenter);
             _lblTile.wordWrap = false;
+            _lblCard = Label(9, TextAnchor.MiddleLeft);
+            _lblCard.wordWrap = true;
+            _lblMenuTitle = Label(15, TextAnchor.MiddleLeft, FontStyle.Bold);
+            _lblMenuCategory = Label(11, TextAnchor.MiddleCenter, FontStyle.Bold);
             _lblSmall = Label(11, TextAnchor.UpperLeft);
             _lblSmallRight = Label(11, TextAnchor.MiddleRight);
             _lblBig = Label(18, TextAnchor.MiddleRight, FontStyle.Bold);
             _lblCenter = Label(14, TextAnchor.MiddleCenter);
             _lblShop = Label(30, TextAnchor.MiddleCenter);
+            _lblAction = Label(14, TextAnchor.MiddleCenter, FontStyle.Bold);
         }
 
         void Draw(Rect r, GUIStyle style, Color color)
@@ -244,8 +276,11 @@ namespace CityGame.Buildings
             if (_popup == Popup.Tools) top = DrawTools(w, top);
             else if (_popup == Popup.Info) top = DrawInfo(w, top);
 
-            top = DrawService(w, top);
-            top = DrawJunction(w, top);
+            if (_popup != Popup.Tools)
+            {
+                top = DrawJunction(w, top);
+                top = DrawHighway(w, top);
+            }
 
             // Подсказка над всеми панелями.
             if (Time.unscaledTime < _toastUntil)
@@ -281,41 +316,133 @@ namespace CityGame.Buildings
             }
 
             _popup = next;
+            if (next == Popup.Tools) _toolPage = ToolPage.Home;
         }
 
-        /// <summary>Панель выбора, что строить: квадратные плитки с цветным значком и подписью, по четыре в ряд.</summary>
+        /// <summary>Модальное меню с категориями и отдельными страницами инструментов.</summary>
         float DrawTools(float w, float top)
         {
-            // «Рука» не нужна: без выбранного инструмента карта и так двигается пальцем.
-            int tools = Enum.GetValues(typeof(Tool)).Length - 1;
-            int perRow = (tools + 1) / 2;
-            const float tile = 68f;
-            const float gap = 6f;
-            float gridW = perRow * tile + (perRow - 1) * gap;
-            float panelH = 2f * tile + gap + 16f;
-            _popupRect = new Rect(8f, top - panelH, w - 16f, panelH);
-            Draw(_popupRect, _panel, PanelColor);
+            _junctionRect = _highwayRect = Rect.zero;
+            bool home = _toolPage == ToolPage.Home;
+            float panelHeight = home ? 142f :
+                _toolPage == ToolPage.Services ? 148f : 218f;
+            Rect panel = new Rect(8f, Mathf.Max(8f, top - panelHeight), w - 16f, panelHeight);
+            _popupRect = panel;
+            Draw(panel, _panel, PanelColor);
 
-            float x0 = _popupRect.x + (_popupRect.width - gridW) * 0.5f;
-            for (int i = 0; i < tools; i++)
+            Rect back = new Rect(panel.x + 8f, panel.y + 8f, 82f, 30f);
+            if (DrawActionButton(back, home ? "ЗАКРЫТЬ" : "← НАЗАД",
+                    new Color32(0xF7, 0xF7, 0xF4, 0xFF), new Color32(0x3B, 0x45, 0x52, 0xFF), true))
             {
-                var t = (Tool)(i + 1);
-                int row = i / perRow, col = i % perRow;
-                bool on = _city.CurrentTool == t;
-                var rect = new Rect(x0 + col * (tile + gap), _popupRect.y + 8f + row * (tile + gap), tile, tile);
-
-                Draw(rect, _panel, on ? ShopColor : new Color32(0xF7, 0xF7, 0xF7, 0xFF));
-                GUI.DrawTexture(new Rect(rect.x + (tile - 36f) * 0.5f, rect.y + 4f, 36f, 36f), _icons[i], ScaleMode.ScaleToFit, true);
-                GUI.Label(new Rect(rect.x, rect.y + 40f, tile, tile - 40f), LabelFor(t), _lblTile);
-
-                if (!GUI.Button(rect, GUIContent.none, GUIStyle.none)) continue;
-
-                // Панель остаётся открытой, пока покупаешь. Повторный тап по активному инструменту снимает его,
-                // и палец снова двигает карту.
-                _city.Select(on ? Tool.Pan : t);
+                if (home) SetPopup(Popup.None);
+                else _toolPage = ToolPage.Home;
             }
 
-            return _popupRect.y - 6f;
+            string title = home ? "СТРОИТЕЛЬСТВО" :
+                _toolPage == ToolPage.Districts ? "РАЙОНЫ" :
+                _toolPage == ToolPage.Roads ? "ДОРОГИ" : "СЛУЖБЫ";
+            GUI.Label(new Rect(panel.x + 98f, panel.y + 8f, panel.width - 108f, 30f), title, _lblMenuTitle);
+
+            if (home)
+            {
+                float gap = 6f;
+                float cardW = (panel.width - 24f - gap * 2f) / 3f;
+                float cardH = 84f;
+                float x = panel.x + 8f;
+                float y = panel.y + 44f;
+                DrawCategoryCard(new Rect(x, y, cardW, cardH), "РАЙОНЫ", _icons[(int)Tool.Residential - 1],
+                    ToolPage.Districts, new Color32(0xE7, 0xF0, 0xE4, 0xFF));
+                DrawCategoryCard(new Rect(x + cardW + gap, y, cardW, cardH), "ДОРОГИ", _icons[(int)Tool.Road - 1],
+                    ToolPage.Roads, new Color32(0xE6, 0xE9, 0xEC, 0xFF));
+                DrawCategoryCard(new Rect(x + (cardW + gap) * 2f, y, cardW, cardH), "СЛУЖБЫ", _icons[(int)Tool.Service - 1],
+                    ToolPage.Services, new Color32(0xF8, 0xE9, 0xE8, 0xFF));
+                return panel.y - 6f;
+            }
+
+            if (_toolPage == ToolPage.Services)
+            {
+                DrawServicePage(panel);
+                return panel.y - 6f;
+            }
+
+            Tool[] tools = _toolPage == ToolPage.Roads
+                ? new[] { Tool.Road, Tool.Highway, Tool.OneWay, Tool.Junction }
+                : new[] { Tool.Residential, Tool.Commercial, Tool.Industrial, Tool.Expand, Tool.Erase };
+            DrawToolPage(panel, tools);
+            return panel.y - 6f;
+        }
+
+        void DrawCategoryCard(Rect r, string title, Texture2D icon, ToolPage page, Color fill)
+        {
+            Draw(r, _panel, fill);
+            float size = Mathf.Min(38f, r.width * 0.42f);
+            GUI.DrawTexture(new Rect(r.x + (r.width - size) * 0.5f, r.y + 7f, size, size), icon,
+                ScaleMode.ScaleToFit, true);
+            GUI.Label(new Rect(r.x + 3f, r.y + r.height - 31f, r.width - 6f, 24f), title,
+                _lblMenuCategory);
+            if (GUI.Button(r, GUIContent.none, GUIStyle.none))
+                _toolPage = page;
+        }
+
+        void DrawToolPage(Rect panel, Tool[] tools)
+        {
+            const float gap = 6f;
+            const int columns = 3;
+            float cardW = (panel.width - 32f - gap * (columns - 1)) / columns;
+            const float cardH = 72f;
+            float x0 = panel.x + 8f;
+            int rows = (tools.Length + columns - 1) / columns;
+            float contentH = rows * cardH + (rows - 1) * gap;
+            float y0 = panel.y + 42f;
+            for (int i = 0; i < tools.Length; i++)
+            {
+                Tool tool = tools[i];
+                int iconIndex = (int)tool - 1;
+                Rect r = new Rect(x0 + (i % columns) * (cardW + gap),
+                    y0 + (i / columns) * (cardH + gap), cardW, cardH);
+                bool selected = _city.CurrentTool == tool;
+                Draw(r, _panel, selected ? ShopColor : new Color32(0xF7, 0xF7, 0xF4, 0xFF));
+                float iconSize = 32f;
+                GUI.DrawTexture(new Rect(r.x + (r.width - iconSize) * 0.5f, r.y + 4f, iconSize, iconSize),
+                    _icons[iconIndex], ScaleMode.ScaleToFit, true);
+                GUI.Label(new Rect(r.x + 2f, r.y + 39f, r.width - 4f, 28f), LabelFor(tool), _lblTile);
+                if (!GUI.Button(r, GUIContent.none, GUIStyle.none)) continue;
+                SelectFromMenu(tool);
+            }
+        }
+
+        void DrawServicePage(Rect panel)
+        {
+            const float gap = 6f;
+            float cardW = (panel.width - 24f - gap * 2f) / 3f;
+            const float cardH = 88f;
+            float x0 = panel.x + 8f;
+            float y = panel.y + 44f;
+            for (int i = 0; i < _serviceIcons.Length; i++)
+            {
+                ServiceKind kind = (ServiceKind)i;
+                Rect r = new Rect(x0 + i * (cardW + gap), y, cardW, cardH);
+                Draw(r, _panel, _city.CurrentTool == Tool.Service && _city.CurrentService == kind
+                    ? ShopColor : new Color32(0xF7, 0xF7, 0xF4, 0xFF));
+                float iconSize = 36f;
+                GUI.DrawTexture(new Rect(r.x + (r.width - iconSize) * 0.5f, r.y + 4f, iconSize, iconSize),
+                    _serviceIcons[i], ScaleMode.ScaleToFit, true);
+                GUI.Label(new Rect(r.x + 3f, r.y + 42f, r.width - 6f, 20f), ServiceSpecs.Title(kind), _lblTile);
+                GUI.Label(new Rect(r.x + 3f, r.y + 63f, r.width - 6f, 18f),
+                    _city.Economy.ServiceCost[i].ToString(), _lblTile);
+                if (!GUI.Button(r, GUIContent.none, GUIStyle.none)) continue;
+                _city.SelectService(kind);
+                _city.Select(Tool.Service);
+                _popup = Popup.None;
+                _toolPage = ToolPage.Home;
+            }
+        }
+
+        void SelectFromMenu(Tool tool)
+        {
+            _city.Select(tool == _city.CurrentTool ? Tool.Pan : tool);
+            _popup = Popup.None;
+            _toolPage = ToolPage.Home;
         }
 
         /// <summary>Панель информации: переключатели, районы, отладка.</summary>
@@ -390,38 +517,6 @@ namespace CityGame.Buildings
             return _popupRect.y - 6f;
         }
 
-        float DrawService(float w, float top)
-        {
-            if (_city.CurrentTool != Tool.Service)
-            {
-                _serviceRect = Rect.zero;
-                return top;
-            }
-
-            const float panelH = 92f;
-            _serviceRect = new Rect(8f, top - panelH, w - 16f, panelH);
-            Draw(_serviceRect, _panel, PanelColor);
-
-            ServiceKind cur = _city.CurrentService;
-            GUI.Label(new Rect(16f, _serviceRect.y + 4f, w - 32f, 22f),
-                string.Format("Радиус {0} кл. Профильный тип +{1:0}% к налогу, остальные +{2:0}%",
-                    ServiceSpecs.Radius(cur), ServiceSpecs.Bonus(cur, ProfileOf(cur)) * 100f,
-                    ServiceSpecs.Bonus(cur, OtherOf(cur)) * 100f), _lblSmall);
-
-            float sw = (w - 32f) / 3f;
-            for (int i = 0; i < 3; i++)
-            {
-                var kind = (ServiceKind)i;
-                bool on = cur == kind;
-                var r = new Rect(16f + i * sw, _serviceRect.y + 34f, sw - 4f, 52f);
-                string text = ServiceSpecs.Title(kind) + "\n" + _city.Economy.ServiceCost[i];
-                bool pressed = GUI.Toggle(r, on, text, GUI.skin.button);
-                if (pressed && !on) _city.SelectService(kind);
-            }
-
-            return _serviceRect.y - 6f;
-        }
-
         float DrawJunction(float w, float top)
         {
             JunctionTapper jt = _city.JunctionTool;
@@ -447,34 +542,93 @@ namespace CityGame.Buildings
                 string price = t == jt.Current ? "сейчас" : cost > 0f ? cost.ToString("0") : "бесплатно";
                 bool on = jt.Pending == t;
                 var r = new Rect(16f + i * ow, panelY + 32f, ow - 4f, 54f);
-                bool pressed = GUI.Toggle(r, on, JunctionSpecs.Short(t) + "\n" + price, GUI.skin.button);
-                if (pressed && !on) jt.Choose(t);
+                if (DrawOptionCard(r, on, _junctionIcons[(int)t], JunctionCardTitle(t), price) && !on)
+                    jt.Choose(t);
             }
 
             bool changed = jt.Pending != jt.Current;
             float pay = jt.CostFor(jt.Pending);
-            GUI.enabled = changed && _city.Economy.Money >= pay;
             string applyText = !changed ? "Выбери вариант" : pay > 0f ? "Применить за " + pay.ToString("0") : "Применить";
-            if (GUI.Button(new Rect(16f, panelY + 92f, (w - 32f) * 0.62f - 4f, 40f), applyText)) jt.Apply();
-            GUI.enabled = true;
-            if (GUI.Button(new Rect(16f + (w - 32f) * 0.62f, panelY + 92f, (w - 32f) * 0.38f, 40f), "Отмена")) jt.Cancel();
+            bool canApply = changed && _city.Economy.Money >= pay;
+            float rowWidth = w - 32f;
+            float gap = 8f;
+            float applyWidth = (rowWidth - gap) * 0.62f;
+            Rect applyRect = new Rect(16f, panelY + 92f, applyWidth, 38f);
+            Rect cancelRect = new Rect(applyRect.xMax + gap, panelY + 92f, rowWidth - applyWidth - gap, 38f);
+            if (DrawActionButton(applyRect, applyText, canApply ? ShopColor : new Color32(0xD2, 0xD8, 0xD5, 0xFF),
+                    canApply ? new Color32(0x2C, 0x3A, 0x40, 0xFF) : new Color32(0x7D, 0x85, 0x84, 0xFF), canApply))
+                jt.Apply();
+            if (DrawActionButton(cancelRect, "Отмена", new Color32(0xF7, 0xF7, 0xF7, 0xFF),
+                    new Color32(0x3B, 0x46, 0x52, 0xFF), true)) jt.Cancel();
 
             return _junctionRect.y - 6f;
         }
 
-        static BuildingCategory ProfileOf(ServiceKind k)
+        bool DrawOptionCard(Rect r, bool selected, Texture2D icon, string title, string detail)
         {
-            switch (k)
+            Color fill = selected ? ShopColor : new Color32(0xF7, 0xF7, 0xF7, 0xFF);
+            Draw(r, _panel, fill);
+            if (r.width < 90f)
             {
-                case ServiceKind.Ambulance: return BuildingCategory.Residential;
-                case ServiceKind.Police: return BuildingCategory.Commercial;
-                default: return BuildingCategory.Industrial;
+                float compactIcon = Mathf.Min(22f, r.height * 0.42f);
+                GUI.DrawTexture(new Rect(r.x + (r.width - compactIcon) * 0.5f, r.y + 2f,
+                    compactIcon, compactIcon), icon, ScaleMode.ScaleToFit, true);
+                GUI.Label(new Rect(r.x + 1f, r.y + 24f, r.width - 2f, 14f), title, _lblTile);
+                GUI.Label(new Rect(r.x + 1f, r.y + 39f, r.width - 2f, 13f), detail, _lblTile);
+                return GUI.Button(r, GUIContent.none, GUIStyle.none);
+            }
+            float iconSize = Mathf.Min(30f, r.height - 10f);
+            GUI.DrawTexture(new Rect(r.x + 5f, r.y + (r.height - iconSize) * 0.5f, iconSize, iconSize),
+                icon, ScaleMode.ScaleToFit, true);
+            float tx = r.x + iconSize + 10f;
+            GUI.Label(new Rect(tx, r.y + 4f, r.width - (tx - r.x) - 3f, 25f), title, _lblCard);
+            GUI.Label(new Rect(tx, r.y + r.height - 23f, r.width - (tx - r.x) - 3f, 18f), detail, _lblSmall);
+            return GUI.Button(r, GUIContent.none, GUIStyle.none);
+        }
+
+        static string JunctionCardTitle(JunctionType type)
+        {
+            switch (type)
+            {
+                case JunctionType.Plain: return "Перекр.";
+                case JunctionType.HighwayRoundabout: return "Шоссе кольцо";
+                case JunctionType.Overpass: return "Мост ↔";
+                case JunctionType.OverpassVertical: return "Мост ↕";
+                default: return "Кольцо";
             }
         }
 
-        static BuildingCategory OtherOf(ServiceKind k)
+        bool DrawActionButton(Rect r, string text, Color fill, Color textColor, bool enabled)
         {
-            return k == ServiceKind.Ambulance ? BuildingCategory.Commercial : BuildingCategory.Residential;
+            Draw(r, _panel, fill);
+            Color old = _lblAction.normal.textColor;
+            _lblAction.normal.textColor = textColor;
+            GUI.Label(r, text, _lblAction);
+            _lblAction.normal.textColor = old;
+            bool wasEnabled = GUI.enabled;
+            GUI.enabled = enabled;
+            bool pressed = GUI.Button(r, GUIContent.none, GUIStyle.none);
+            GUI.enabled = wasEnabled;
+            return pressed;
         }
+
+        float DrawHighway(float w, float top)
+        {
+            if (_city.CurrentTool != Tool.Highway && _city.CurrentTool != Tool.OneWay)
+            {
+                _highwayRect = Rect.zero;
+                return top;
+            }
+
+            const float panelH = 54f;
+            _highwayRect = new Rect(8f, top - panelH, w - 16f, panelH);
+            Draw(_highwayRect, _panel, PanelColor);
+            string hint = _city.CurrentTool == Tool.OneWay
+                ? "Строй обычную одностороннюю дорогу на свободных клетках. Её можно соединять и пересекать с шоссе, затем ставить мост."
+                : "Строй отдельное шоссе на свободных клетках или поверх обычной дороги. Встречное направление — отдельным штрихом.";
+            GUI.Label(new Rect(_highwayRect.x + 10f, _highwayRect.y + 4f, _highwayRect.width - 20f, panelH - 8f), hint, _lblSmall);
+            return _highwayRect.y - 6f;
+        }
+
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using CityGame.CellRoads;
 using UnityEngine;
 
 namespace CityGame.Buildings
@@ -25,6 +26,22 @@ namespace CityGame.Buildings
                 case Tool.Road:
                     Fill(px, RBox(22, 4, 42, 60, 3), Slate);
                     foreach (float y in new[] { 10f, 28f, 46f }) Fill(px, Box(30.5f, y, 33.5f, y + 10f), Yellow);
+                    break;
+
+                case Tool.Highway:
+                    Fill(px, RBox(10, 4, 54, 60, 5), Slate);
+                    Fill(px, Box(30, 5, 34, 59), Yellow);
+                    foreach (float y in new[] { 12f, 30f, 48f })
+                    {
+                        Fill(px, Tri(21, y, 16, y - 6, 26, y - 6), White);
+                        Fill(px, Tri(43, y, 38, y + 6, 48, y + 6), White);
+                    }
+                    break;
+
+                case Tool.OneWay:
+                    Fill(px, RBox(19, 4, 45, 60, 5), Slate);
+                    foreach (float y in new[] { 8f, 52f }) Fill(px, Box(30, y, 34, y + 6f), Yellow);
+                    Fill(px, Tri(32, 43, 22, 30, 42, 30), White);
                     break;
 
                 case Tool.Junction:
@@ -90,6 +107,109 @@ namespace CityGame.Buildings
                 hideFlags = HideFlags.DontSave
             };
             tex.SetPixels(px);
+            tex.Apply();
+            return tex;
+        }
+
+        /// <summary>Мэр-наставник: лаконичный портрет в той же круглой плашке, что значки служб.</summary>
+        public static Texture2D MakeMayor()
+        {
+            var px = new Color[N * N];
+            Fill(px, Circle(32, 32, 30), new Color32(0xD9, 0xE0, 0xE5, 0xFF));
+            Fill(px, Circle(32, 32, 26), Slate);
+            Fill(px, Circle(32, 32, 21), new Color32(0xA9, 0xD1, 0x8E, 0xFF));
+            // Плечи и лицо.
+            Fill(px, RBox(14, 8, 50, 28, 8), new Color32(0xF7, 0xF7, 0xF4, 0xFF));
+            Fill(px, Circle(32, 34, 12), new Color32(0xF0, 0xC9, 0xA5, 0xFF));
+            // Кепка мэра и золотой значок.
+            Fill(px, RBox(18, 42, 46, 48, 3), Yellow);
+            Fill(px, Tri(32, 58, 18, 45, 46, 45), Slate);
+            Fill(px, RBox(16, 43, 48, 47, 2), Slate);
+            Fill(px, Circle(32, 45, 3), Yellow);
+            // Галстук и пуговицы.
+            Fill(px, Tri(32, 28, 27, 18, 32, 12), Yellow);
+            Fill(px, Tri(32, 28, 37, 18, 32, 12), Yellow);
+            return Texture(px, "MayorIcon");
+        }
+
+        public static Texture2D MakeService(ServiceKind kind)
+        {
+            var px = new Color[N * N];
+            Color tint = kind == ServiceKind.Ambulance ? new Color32(0xE7, 0x79, 0x79, 0xFF) :
+                         kind == ServiceKind.Police ? new Color32(0x73, 0x9A, 0xD2, 0xFF) :
+                         new Color32(0xEF, 0xA0, 0x57, 0xFF);
+            Fill(px, Circle(32, 32, 29), tint);
+            Fill(px, Circle(32, 32, 24), White);
+            if (kind == ServiceKind.Ambulance)
+            {
+                Fill(px, RBox(28, 13, 36, 51, 2), tint);
+                Fill(px, RBox(13, 28, 51, 36, 2), tint);
+            }
+            else if (kind == ServiceKind.Police)
+            {
+                Fill(px, Tri(32, 12, 14, 25, 20, 48), tint);
+                Fill(px, Tri(32, 12, 20, 48, 44, 48), tint);
+                Fill(px, Tri(32, 12, 44, 48, 50, 25), tint);
+                Fill(px, Box(29, 22, 35, 40), White);
+                Fill(px, Circle(32, 17, 3), White);
+            }
+            else
+            {
+                Fill(px, Tri(32, 10, 18, 34, 27, 32), tint);
+                Fill(px, Tri(32, 10, 27, 32, 39, 31), tint);
+                Fill(px, Tri(32, 10, 39, 31, 48, 34), tint);
+                Fill(px, Circle(32, 24, 7), White);
+                Fill(px, Circle(32, 24, 4), tint);
+            }
+
+            return Texture(px, "ServiceIcon" + kind);
+        }
+
+        public static Texture2D MakeJunction(JunctionType type)
+        {
+            var px = new Color[N * N];
+            Fill(px, Circle(32, 32, 29), new Color32(0xD9, 0xE0, 0xE5, 0xFF));
+            Fill(px, Circle(32, 32, 25), White);
+            Color road = Slate;
+            if (JunctionSpecs.IsOverpass(type))
+            {
+                bool vertical = type == JunctionType.OverpassVertical;
+                Fill(px, vertical ? RBox(5, 25, 59, 39, 5) : RBox(25, 5, 39, 59, 5),
+                    new Color32(0x8B, 0x9A, 0xA7, 0xFF));
+                Fill(px, vertical ? RBox(25, 5, 39, 59, 5) : RBox(5, 25, 59, 39, 5), road);
+                Fill(px, vertical ? Box(30, 8, 34, 56) : Box(8, 30, 56, 34), Yellow);
+            }
+            else if (type == JunctionType.Roundabout || type == JunctionType.HighwayRoundabout)
+            {
+                bool highway = type == JunctionType.HighwayRoundabout;
+                Fill(px, Circle(32, 32, highway ? 28 : 24), road);
+                Fill(px, Circle(32, 32, highway ? 11 : 10), new Color32(0xA9, 0xD1, 0x8E, 0xFF));
+                Fill(px, Circle(32, 32, 5), Yellow);
+                if (highway)
+                {
+                    Fill(px, Box(2, 30, 11, 34), Yellow);
+                    Fill(px, Box(53, 30, 62, 34), Yellow);
+                }
+            }
+            else
+            {
+                Fill(px, RBox(5, 25, 59, 39, 5), road);
+                Fill(px, RBox(25, 5, 39, 59, 5), road);
+                Fill(px, Circle(32, 32, 5), Yellow);
+            }
+            return Texture(px, "JunctionIcon" + type);
+        }
+
+        static Texture2D Texture(Color[] pixels, string title)
+        {
+            var tex = new Texture2D(N, N, TextureFormat.RGBA32, false)
+            {
+                name = title,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.DontSave
+            };
+            tex.SetPixels(pixels);
             tex.Apply();
             return tex;
         }

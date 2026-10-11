@@ -1,8 +1,8 @@
 namespace CityGame.CellRoads
 {
     /// <summary>
-    /// Полоса шоссе. Две соседние прямые параллельные дороги объединяются в шоссе: каждая становится
-    /// односторонней полосой. Если параллельных дорог три и больше, шоссе не получается.
+    /// Полоса шоссе. Может быть распознана у соседних обычных дорог или проложена отдельным маршрутом.
+    /// Каждая самостоятельная проезжая часть односторонняя; встречную проводят отдельным штрихом.
     /// </summary>
     public struct HighwayLane
     {
@@ -13,13 +13,25 @@ namespace CityGame.CellRoads
 
         /// <summary>С какой стороны лежит вторая полоса шоссе.</summary>
         public int PartnerSide;
+
+        /// <summary>Ручная полоса, заданная маршрутом игрока.</summary>
+        public bool Manual;
+
+        /// <summary>Есть соседняя встречная полоса, поэтому можно рисовать разделитель.</summary>
+        public bool Median;
+
+        /// <summary>Обычная по ширине односторонняя дорога, без скоростного бонуса шоссе.</summary>
+        public bool OneWay;
+
+        /// <summary>Полоса построена как самостоятельный объект, а не назначена готовой дороге.</summary>
+        public bool Standalone;
     }
 
     /// <summary>Числа шоссе, временные.</summary>
     public static class HighwaySpecs
     {
-        /// <summary>Слияние двух соседних дорог в шоссе. Выключено: конфликтует при превращении. Включить: true.</summary>
-        public static bool Enabled = false;
+        /// <summary>Автоматически распознаёт длинные пары соседних прямых дорог.</summary>
+        public static bool Enabled = true;
 
         /// <summary>Во сколько раз машины едут быстрее, чем по обычной дороге.</summary>
         public const float SpeedFactor = 2f;

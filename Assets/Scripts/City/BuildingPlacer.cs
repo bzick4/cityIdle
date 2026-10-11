@@ -103,7 +103,8 @@ namespace CityGame.Buildings
             if (EraseMode)
             {
                 _model.Remove(cell);
-                _roads.Remove(cell);
+                if (_roads.Has(cell) && !_roads.Remove(cell))
+                    Message?.Invoke("Этот участок связан с шоссе и не может быть стёрт");
                 return;
             }
 

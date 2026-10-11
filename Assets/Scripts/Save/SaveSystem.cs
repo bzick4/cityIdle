@@ -6,6 +6,7 @@ using UnityEngine;
 namespace CityGame.Save
 {
     [Serializable] public class RoadCellSave { public int x, y, mask, type; }
+    [Serializable] public class HighwayCellSave { public int x, y, heading, kind, originalMask; }
     [Serializable] public class BuildingSave { public int x, y, category, kind, serial; }
     [Serializable] public class HexSave { public int q, r; }
 
@@ -19,6 +20,7 @@ namespace CityGame.Save
         public float camX, camY, camWidth;
         public List<HexSave> openSectors = new List<HexSave>();
         public List<RoadCellSave> roads = new List<RoadCellSave>();
+        public List<HighwayCellSave> highway = new List<HighwayCellSave>();
         public List<BuildingSave> buildings = new List<BuildingSave>();
     }
 

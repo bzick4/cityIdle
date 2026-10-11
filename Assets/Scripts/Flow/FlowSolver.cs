@@ -174,7 +174,7 @@ namespace CityGame.Flow
             IReadOnlyList<District> districts = _model.Districts;
             foreach (District d in districts) d.Satisfaction = CategorySpecs.Merges(d.Category) ? 0f : 1f;
 
-            // Рёбра для маршрутизации: все, кроме шоссе (съездов пока нет).
+            // Рёбра для маршрутизации: обычные дороги, шоссе и односторонние дороги.
             var edges = new List<RoadEdge>();
             var nodeIndex = new Dictionary<int, int>();
             foreach (RoadEdge e in _graph.Edges)

@@ -8,7 +8,7 @@ namespace CityGame.Roads
         Highway
     }
 
-    /// <summary>Слой дороги. Шоссе лежит выше земли и соединяется с ней только съездами (позже).</summary>
+    /// <summary>Слой дорожной сети.</summary>
     public enum RoadLayer
     {
         Tunnel = -1,
