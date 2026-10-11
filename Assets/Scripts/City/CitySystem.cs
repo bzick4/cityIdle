@@ -101,6 +101,10 @@ namespace CityGame.Buildings
             RoadDrawer = GetOrAdd<CellRoadDrawer>();
             RoadDrawer.CellSize = CellSize;
             RoadDrawer.Bind(RoadMap, Model, Sectors, Economy);
+            RoadDrawer.CostFactorAt = Biomes.RoadCostFactor;
+            var bridges = GetOrAdd<BridgeRenderer>();
+            bridges.CellSize = CellSize;
+            bridges.Bind(RoadMap, Biomes);
 
             JunctionTool = GetOrAdd<JunctionTapper>();
             JunctionTool.CellSize = CellSize;
@@ -117,7 +121,7 @@ namespace CityGame.Buildings
 
             Traffic = GetOrAdd<CarSystem>();
             Traffic.CellSize = CellSize;
-            Traffic.Bind(Flow, RoadNetwork, RoadMap);
+            Traffic.Bind(Flow, RoadNetwork, RoadMap, Model);
             Heatmap = GetOrAdd<FlowHeatmap>();
             Heatmap.Bind(Flow, RoadNetwork);
 

@@ -63,6 +63,17 @@ namespace CityGame.Sectors
             return BiomeSpecs.CanBuildBuildings(BiomeAt(cell));
         }
 
+        public bool IsSea(Vector2Int cell)
+        {
+            return BiomeAt(cell) == Biome.Sea;
+        }
+
+        /// <summary>Множитель цены клетки дороги: на море это мост.</summary>
+        public float RoadCostFactor(Vector2Int cell)
+        {
+            return BiomeSpecs.RoadCostFactor(BiomeAt(cell));
+        }
+
         public float CostFactor(Vector2Int cell)
         {
             return BiomeSpecs.BuildCostFactor(BiomeAt(cell));

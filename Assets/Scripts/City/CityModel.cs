@@ -10,6 +10,8 @@ namespace CityGame.Buildings
         public readonly BuildingCategory Category;
         public readonly ServiceKind Kind;
         public District District;
+        /// <summary>Порядок постройки: чем меньше, тем раньше поставлена клетка.</summary>
+        public int Serial;
 
         public BuildingCell(Vector2Int pos, BuildingCategory category, ServiceKind kind = ServiceKind.Ambulance)
         {
@@ -42,6 +44,7 @@ namespace CityGame.Buildings
         readonly Dictionary<Vector2Int, BuildingCell> _cells = new Dictionary<Vector2Int, BuildingCell>();
         readonly List<District> _districts = new List<District>();
         int _nextDistrictId = 1;
+        int _serial;
 
         static readonly Vector2Int[] Dirs =
         {
@@ -71,7 +74,7 @@ namespace CityGame.Buildings
         public bool Place(Vector2Int pos, BuildingCategory category, ServiceKind kind = ServiceKind.Ambulance)
         {
             if (_cells.ContainsKey(pos)) return false;
-            var cell = new BuildingCell(pos, category, kind);
+            var cell = new BuildingCell(pos, category, kind) { Serial = ++_serial };
             _cells[pos] = cell;
             RebuildDistricts();
             CellAdded?.Invoke(cell);

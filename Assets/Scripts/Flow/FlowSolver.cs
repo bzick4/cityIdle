@@ -62,6 +62,9 @@ namespace CityGame.Flow
             public float Flow;
             public int SrcDistrictId;
             public int DstDistrictId;
+            /// <summary>Любая клетка района отправления и назначения: по ней район находят заново после перестройки.</summary>
+            public Vector2Int SrcCell;
+            public Vector2Int DstCell;
             public readonly List<RouteStep> Steps = new List<RouteStep>();
         }
 
@@ -83,6 +86,9 @@ namespace CityGame.Flow
 
         public event Action Solved;
 
+        /// <summary>Сеть или здания изменились, расчёт ещё не обновлён.</summary>
+        public bool Dirty => _dirty;
+
         RoadGraph _graph;
         CityModel _model;
         bool _dirty = true;
@@ -94,6 +100,23 @@ namespace CityGame.Flow
             public bool Dynamic;   // время берётся из загрузки ребра
             public float FixedTime;
         }
+
+        /// <summary>Запомненные данные последнего расчёта: по ним ищется путь от любой точки дороги.</summary>
+        sealed class RoutingState
+        {
+            public List<RoadEdge> Edges;
+            public Dictionary<int, int> EdgeIndexById;
+            public Dictionary<int, int> NodeIndex;
+            public int[] NodeIdOfIndex;
+            public List<Access> Accesses;
+            public int RoadNodes;
+            public List<Link>[] Links;
+            public float[] EdgeT;
+            public float[] NodeT;
+            public Dictionary<int, int> DistrictNode;
+        }
+
+        RoutingState _rs;
 
         sealed class Access
         {
@@ -351,6 +374,13 @@ namespace CityGame.Flow
                 if (kv.Value > 1e-4f)
                     districts[kv.Key].Satisfaction = TimeScore(inTime[kv.Key] / kv.Value);
 
+            _rs = new RoutingState
+            {
+                Edges = edges, EdgeIndexById = edgeIndexById, NodeIndex = nodeIndex, NodeIdOfIndex = nodeIdOfIndex,
+                Accesses = accesses, RoadNodes = roadNodes, Links = links, EdgeT = edgeT, NodeT = nodeT,
+                DistrictNode = districtNode
+            };
+
             BuildRoutes(districts, edges, nodeIdOfIndex, accesses, roadNodes, links, edgeT, nodeT, districtNode,
                 origins, od, dist, predNode, predEdge);
 
@@ -375,7 +405,12 @@ namespace CityGame.Flow
                     if (trip.src != o) continue;
                     Route r = MakeRoute(districtNode[o], districtNode[trip.dst], districts[o].Id, districts[trip.dst].Id,
                         trip.flow, edges, nodeIdOfIndex, accesses, roadNodes, predNode, predEdge);
-                    if (r != null) Routes.Add(r);
+                    if (r != null)
+                    {
+                        r.SrcCell = districts[o].Cells[0].Pos;
+                        r.DstCell = districts[trip.dst].Cells[0].Pos;
+                        Routes.Add(r);
+                    }
                 }
             }
 
@@ -390,7 +425,12 @@ namespace CityGame.Flow
                     if (trip.dst != t) continue;
                     Route r = MakeRoute(districtNode[t], districtNode[trip.src], districts[t].Id, districts[trip.src].Id,
                         trip.flow, edges, nodeIdOfIndex, accesses, roadNodes, predNode, predEdge);
-                    if (r != null) Routes.Add(r);
+                    if (r != null)
+                    {
+                        r.SrcCell = districts[t].Cells[0].Pos;
+                        r.DstCell = districts[trip.src].Cells[0].Pos;
+                        Routes.Add(r);
+                    }
                 }
             }
         }
@@ -413,6 +453,13 @@ namespace CityGame.Flow
             hops.Reverse();
 
             var route = new Route { Flow = flow, SrcDistrictId = srcId, DstDistrictId = dstId };
+            AppendSteps(route, hops, edges, nodeIdOfIndex, accesses, roadNodes);
+            return route.Steps.Count > 0 ? route : null;
+        }
+
+        static void AppendSteps(Route route, List<(int from, int to, int edge)> hops, List<RoadEdge> edges,
+            int[] nodeIdOfIndex, List<Access> accesses, int roadNodes)
+        {
             foreach (var hop in hops)
             {
                 if (hop.edge < 0) continue;
@@ -452,8 +499,83 @@ namespace CityGame.Flow
                     EndNode = toRoad ? nodeIdOfIndex[hop.to] : -1
                 });
             }
+        }
 
-            return route.Steps.Count > 0 ? route : null;
+        /// <summary>
+        /// Путь от точки на дороге до района с учётом направления взгляда машины.
+        /// Для машин, у которых под колёсами пересобрали сеть. Возвращает null, если дороги рядом нет или пути нет.
+        /// </summary>
+        public Route RouteFrom(Vector2 pos, Vector2 heading, Vector2Int destCell, float radius)
+        {
+            if (_dirty || _rs == null || _graph == null || _model == null) return null;
+
+            District dd = _model.Get(destCell)?.District;
+            if (dd == null) return null;
+            int di = -1;
+            IReadOnlyList<District> districts = _model.Districts;
+            for (int i = 0; i < districts.Count; i++)
+                if (ReferenceEquals(districts[i], dd)) { di = i; break; }
+            if (di < 0 || !_rs.DistrictNode.TryGetValue(di, out int dstNode)) return null;
+
+            if (!_graph.FindEdgeNear(pos, radius, RoadLayer.Ground, out RoadEdge edge, out int seg, out Vector2 closest))
+                return null;
+            if (!_rs.EdgeIndexById.ContainsKey(edge.Id)) return null;
+
+            float along = 0f;
+            for (int i = 0; i < seg && i + 1 < edge.Points.Count; i++)
+                along += Vector2.Distance(edge.Points[i], edge.Points[i + 1]);
+            along = Mathf.Clamp(along + Vector2.Distance(edge.Points[seg], closest), 0f, edge.Length);
+
+            Vector2 tangent = seg + 1 < edge.Points.Count
+                ? (edge.Points[seg + 1] - edge.Points[seg]).normalized
+                : Vector2.right;
+            bool towardB = Vector2.Dot(tangent, heading) >= 0f;
+            float speed = EdgeSpeed(edge);
+
+            var dist = new float[_rs.Links.Length];
+            var pn = new int[_rs.Links.Length];
+            var pe = new int[_rs.Links.Length];
+
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                bool allowA = attempt == 1 || !towardB;
+                bool allowB = attempt == 1 || towardB;
+                var seeds = new List<(int node, float d)>();
+                if (allowA && edge.OneWay <= 0) seeds.Add((_rs.NodeIndex[edge.NodeA], along / speed));
+                if (allowB && edge.OneWay >= 0) seeds.Add((_rs.NodeIndex[edge.NodeB], (edge.Length - along) / speed));
+                if (seeds.Count == 0) continue;
+
+                Dijkstra(_rs.Links, -1, _rs.EdgeT, _rs.NodeT, dist, pn, pe, seeds);
+                if (dist[dstNode] >= float.MaxValue) continue;
+
+                var hops = new List<(int from, int to, int edge)>();
+                int n = dstNode;
+                int guard = pn.Length + 2;
+                while (pn[n] >= 0 && guard-- > 0)
+                {
+                    hops.Add((pn[n], n, pe[n]));
+                    n = pn[n];
+                }
+
+                if (n >= _rs.RoadNodes) continue;
+                hops.Reverse();
+
+                var route = new Route { DstCell = destCell };
+                int seedId = _rs.NodeIdOfIndex[n];
+                route.Steps.Add(new RouteStep
+                {
+                    Edge = edge,
+                    From = along,
+                    To = seedId == edge.NodeA ? 0f : edge.Length,
+                    EndNode = seedId
+                });
+                if (Mathf.Abs(route.Steps[0].From - route.Steps[0].To) < 0.02f) route.Steps.Clear();
+
+                AppendSteps(route, hops, _rs.Edges, _rs.NodeIdOfIndex, _rs.Accesses, _rs.RoadNodes);
+                if (route.Steps.Count > 0) return route;
+            }
+
+            return null;
         }
 
         static void Add(Dictionary<int, float> map, int key, float value)
@@ -557,7 +679,7 @@ namespace CityGame.Flow
 
         // Dijkstra на SortedSet. Сети маленькие, для телефона потом заменим на Job + Burst.
         static void Dijkstra(List<Link>[] links, int source, float[] edgeT, float[] nodeT, float[] dist,
-            int[] predNode, int[] predEdge)
+            int[] predNode, int[] predEdge, List<(int node, float d)> seeds = null)
         {
             for (int i = 0; i < dist.Length; i++)
             {
@@ -567,8 +689,20 @@ namespace CityGame.Flow
             }
 
             var set = new SortedSet<(float d, int n)>();
-            dist[source] = 0f;
-            set.Add((0f, source));
+            if (seeds != null)
+            {
+                foreach (var sd in seeds)
+                {
+                    if (sd.d >= dist[sd.node]) continue;
+                    dist[sd.node] = sd.d;
+                    set.Add((sd.d, sd.node));
+                }
+            }
+            else
+            {
+                dist[source] = 0f;
+                set.Add((0f, source));
+            }
 
             while (set.Count > 0)
             {

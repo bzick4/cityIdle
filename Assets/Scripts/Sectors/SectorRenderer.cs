@@ -59,9 +59,9 @@ namespace CityGame.Sectors
             Destroy(ref _pending);
 
             var pendingList = new List<HexCoord>();
-            var open = new List<HexCoord>[4];
-            var frontier = new List<HexCoord>[4];
-            for (int i = 0; i < 4; i++)
+            var open = new List<HexCoord>[BiomeSpecs.Count];
+            var frontier = new List<HexCoord>[BiomeSpecs.Count];
+            for (int i = 0; i < BiomeSpecs.Count; i++)
             {
                 open[i] = new List<HexCoord>();
                 frontier[i] = new List<HexCoord>();
@@ -74,7 +74,7 @@ namespace CityGame.Sectors
                 else frontier[(int)_biomes.BiomeOf(h)].Add(h);
             }
 
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < BiomeSpecs.Count; i++)
             {
                 var b = (Biome)i;
                 Color ground = BiomeSpecs.Ground(b);

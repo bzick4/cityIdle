@@ -23,6 +23,9 @@ namespace CityGame.CellRoads
 
         public Func<Vector2, bool> IsPointerBlocked;
 
+        /// <summary>Множитель цены клетки дороги (мост на море дороже).</summary>
+        public Func<Vector2Int, float> CostFactorAt;
+
         CellRoadMap _map;
         CityModel _city;
         SectorMap _sectors;
@@ -199,7 +202,7 @@ namespace CityGame.CellRoads
             float total = 0f;
             foreach (Vector2Int cell in _path)
             {
-                float c = _map.Has(cell) ? 0f : cost;
+                float c = _map.Has(cell) ? 0f : cost * (CostFactorAt != null ? CostFactorAt(cell) : 1f);
                 if (_economy.Money < total + c) break;
                 total += c;
                 accepted.Add(cell);

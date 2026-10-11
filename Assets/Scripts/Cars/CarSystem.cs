@@ -3,17 +3,19 @@ using CityGame.Buildings;
 using CityGame.CellRoads;
 using CityGame.Flow;
 using CityGame.Roads;
+using CityGame.Sectors;
 using UnityEngine;
 
 namespace CityGame.Cars
 {
     /// <summary>
-    /// Машины на карте. Каждый маршрут из расчёта потоков выпускает машины с частотой Поток × CarsPerFlow в секунду,
-    /// туда и обратно. Машина едет по ломаной ребра в правой полосе, держит дистанцию до переднего,
-    /// на въезд в ребро и в развилку нужен «талон»: интервал между талонами равен 1 / (пропускная способность × CarsPerFlow).
-    /// Поэтому при загрузке выше единицы перед узким местом растёт очередь с красными стоп-сигналами.
-    /// Это визуальный слой: налоги по-прежнему считает FlowSolver.
-    /// Любое изменение дорог пересобирает граф, и машины на старых рёбрах исчезают.
+    /// Парк машин. Каждый жилой блок даёт от 0.4 до 1 машины, значения копятся: машина появляется на карте,
+    /// когда накопленная сумма достигает очередного целого. Первый жилой блок всегда даёт целую машину.
+    /// Машина живёт в городе постоянно: стоит у дома, едет в торговую или промышленную цель, пережидает там,
+    /// возвращается домой. Если под ней перестроили дороги, она ищет путь заново от своей точки и не исчезает.
+    /// На въезд в ребро и в развилку нужен «талон»: интервал равен 1 / (пропускная способность × CarsPerFlow),
+    /// поэтому при перегрузе перед узким местом растёт очередь со стоп-сигналами.
+    /// Это визуальный слой: налоги считает FlowSolver.
     /// </summary>
     public sealed class CarSystem : MonoBehaviour
     {
@@ -25,15 +27,29 @@ namespace CityGame.Cars
         [Tooltip("Смещение полосы от оси дороги, доля клетки")]
         public float LaneOffset = 0.125f;
 
-        [Header("Поток")]
-        [Tooltip("Сколько машин в секунду на единицу потока. Задаёт и густоту, и пропускную способность")]
+        [Header("Парк")]
+        [Tooltip("Сколько машин даёт один жилой блок: от и до")]
+        public float ContributionMin = 0.4f;
+        public float ContributionMax = 1f;
+        [Tooltip("Сколько стоит дома между поездками, секунд: от и до")]
+        public Vector2 ParkSeconds = new Vector2(2f, 6f);
+        [Tooltip("Сколько стоит у цели, секунд: от и до")]
+        public Vector2 DwellSeconds = new Vector2(3f, 8f);
+
+        [Header("Движение")]
+        [Tooltip("Задаёт пропускную способность в машинах в секунду: способность × это число")]
         public float CarsPerFlow = 0.15f;
-        public int MaxCars = 300;
         [Tooltip("Множитель к скорости из расчёта потоков")]
         public float SpeedScale = 0.8f;
+        [Tooltip("Радиус поиска дороги под машиной после перестройки сети")]
+        public float RerouteRadius = 1.0f;
 
+        /// <summary>Всего машин в парке, включая стоящих дома и у цели.</summary>
         public int Count => _cars.Count;
+        public int OnRoad { get; private set; }
         public int Stopped { get; private set; }
+        /// <summary>Накопленная сумма вкладов жилых блоков. Машин на карте: её целая часть.</summary>
+        public float FleetValue { get; private set; }
 
         public bool Visible
         {
@@ -46,36 +62,40 @@ namespace CityGame.Cars
             }
         }
 
+        enum State { Parked, Driving, Inside }
+
         sealed class Car
         {
+            public Vector2Int Home;
+            public State State;
+            public float Timer;
             public FlowSolver.Route Route;
             public int Step;
             public float Q;          // расстояние вдоль участка в направлении движения, от начала ребра в этом направлении
             public float Speed;
             public bool Cleared;     // талон на следующий участок уже получен
-            public bool Braking;
+            public bool Returning;
+            public Vector2Int GoalCell;
             public Color Color;
             public Vector2 Pos;
             public Vector2 Dir;
             public bool Placed;
-            public bool Upper;
-            public bool Dead;
+            public bool Braking;
         }
 
         FlowSolver _flow;
         RoadGraph _graph;
         CellRoadMap _map;
+        CityModel _model;
         readonly List<Car> _cars = new List<Car>();
         readonly Dictionary<long, List<Car>> _lanes = new Dictionary<long, List<Car>>();
         readonly Stack<List<Car>> _pool = new Stack<List<Car>>();
         readonly Dictionary<long, float> _edgeNext = new Dictionary<long, float>();
         readonly Dictionary<int, float> _nodeNext = new Dictionary<int, float>();
-        readonly List<float> _acc = new List<float>();
         readonly MeshBatch _lowBatch = new MeshBatch();
         readonly MeshBatch _highBatch = new MeshBatch();
         MeshRenderer _low, _high;
         bool _visible = true;
-        bool _routesDirty = true;
         float _now;
         int _rotate;
         int _serial;
@@ -86,14 +106,17 @@ namespace CityGame.Cars
             new Color32(0xF2, 0xC1, 0x4E, 0xFF), new Color32(0x6F, 0xBF, 0x73, 0xFF), new Color32(0xF2, 0x99, 0x4A, 0xFF)
         };
 
-        public void Bind(FlowSolver flow, RoadGraph graph, CellRoadMap map)
+        public void Bind(FlowSolver flow, RoadGraph graph, CellRoadMap map, CityModel model)
         {
             if (_flow != null) _flow.Solved -= OnSolved;
+            if (_model != null) _model.Rebuilt -= SyncFleet;
             _flow = flow;
             _graph = graph;
             _map = map;
+            _model = model;
             _flow.Solved += OnSolved;
-            OnSolved();
+            _model.Rebuilt += SyncFleet;
+            SyncFleet();
 
             _low = MakeView("Cars low", RoadSpecs.SortingOrder(RoadLayer.Ground) + 3);
             _high = MakeView("Cars high", RoadSpecs.SortingOrder(RoadLayer.Ground) + 13);
@@ -117,18 +140,69 @@ namespace CityGame.Cars
         void OnDestroy()
         {
             if (_flow != null) _flow.Solved -= OnSolved;
+            if (_model != null) _model.Rebuilt -= SyncFleet;
         }
 
         void OnSolved()
         {
-            _routesDirty = true;
+            // Номера рёбер и узлов после перестройки сети новые, старые талоны ничего не значат.
+            _edgeNext.Clear();
+            _nodeNext.Clear();
         }
 
-        void ResetSpawners()
+        // --- парк ---
+
+        float Contribution(Vector2Int cell)
         {
-            _acc.Clear();
-            for (int i = 0; i < _flow.Routes.Count; i++) _acc.Add(Random.value);
-            _routesDirty = false;
+            float t = (BiomeMap.Mix(cell.x, cell.y, 33) & 0xFFFF) / 65535f;
+            return Mathf.Lerp(ContributionMin, ContributionMax, t);
+        }
+
+        Vector2 ParkedPos(Vector2Int home)
+        {
+            return new Vector2((home.x + 0.5f) * CellSize, (home.y + 0.3f) * CellSize);
+        }
+
+        /// <summary>Пересчитывает парк по жилым блокам в порядке постройки.</summary>
+        void SyncFleet()
+        {
+            var residents = new List<BuildingCell>();
+            foreach (BuildingCell c in _model.Cells)
+                if (c.Category == BuildingCategory.Residential) residents.Add(c);
+            residents.Sort((a, b) => a.Serial.CompareTo(b.Serial));
+
+            var homes = new List<Vector2Int>();
+            float sum = 0f;
+            for (int i = 0; i < residents.Count; i++)
+            {
+                // Первый блок даёт машину сразу, остальные копят случайную долю.
+                sum += i == 0 ? 1f : Contribution(residents[i].Pos);
+                while (homes.Count < Mathf.FloorToInt(sum + 1e-4f)) homes.Add(residents[i].Pos);
+            }
+
+            FleetValue = sum;
+
+            for (int i = 0; i < homes.Count; i++)
+            {
+                if (i < _cars.Count)
+                {
+                    _cars[i].Home = homes[i];
+                    continue;
+                }
+
+                _cars.Add(new Car
+                {
+                    Home = homes[i],
+                    State = State.Parked,
+                    Timer = Random.Range(ParkSeconds.x, ParkSeconds.y),
+                    Color = Palette[(_serial++ * 5 + 1) % Palette.Length],
+                    Pos = ParkedPos(homes[i]),
+                    Dir = Vector2.right,
+                    Placed = true
+                });
+            }
+
+            if (_cars.Count > homes.Count) _cars.RemoveRange(homes.Count, _cars.Count - homes.Count);
         }
 
         // ---------------------------------------------------------------
@@ -150,15 +224,14 @@ namespace CityGame.Cars
 
         void Update()
         {
-            if (_flow == null || _graph == null) return;
-            if (_routesDirty) ResetSpawners();
+            if (_flow == null || _graph == null || _model == null) return;
 
             float dt = Mathf.Min(Time.deltaTime, 0.05f);
             if (dt <= 0f) return;
             _now += dt;
 
             RebuildLanes();
-            Spawn(dt);
+            Think(dt);
             Move(dt);
             Render(dt);
         }
@@ -174,17 +247,21 @@ namespace CityGame.Cars
             _lanes.Clear();
             foreach (Car c in _cars)
             {
-                if (c.Dead) continue;
+                if (c.State != State.Driving) continue;
                 FlowSolver.RouteStep st = c.Route.Steps[c.Step];
-                long key = LaneKey(st.Edge, DirOf(st));
-                if (!_lanes.TryGetValue(key, out List<Car> list))
-                {
-                    list = _pool.Count > 0 ? _pool.Pop() : new List<Car>();
-                    _lanes[key] = list;
-                }
-
-                list.Add(c);
+                AddToLane(c, LaneKey(st.Edge, DirOf(st)));
             }
+        }
+
+        void AddToLane(Car c, long key)
+        {
+            if (!_lanes.TryGetValue(key, out List<Car> list))
+            {
+                list = _pool.Count > 0 ? _pool.Pop() : new List<Car>();
+                _lanes[key] = list;
+            }
+
+            list.Add(c);
         }
 
         float EdgeHeadway(RoadEdge e)
@@ -201,7 +278,7 @@ namespace CityGame.Cars
             float best = 1e9f;
             foreach (Car o in list)
             {
-                if (o == car || o.Dead) continue;
+                if (o == car) continue;
                 if (o.Q < q || (o.Q == q && o.GetHashCode() < car.GetHashCode())) continue;
                 float gap = o.Q - CarLength - MinGap - q;
                 if (gap < best) best = gap;
@@ -215,7 +292,7 @@ namespace CityGame.Cars
         {
             if (!_lanes.TryGetValue(LaneKey(st.Edge, DirOf(st)), out List<Car> list)) return true;
             foreach (Car o in list)
-                if (!o.Dead && Mathf.Abs(o.Q - q0) < CarLength + MinGap) return false;
+                if (Mathf.Abs(o.Q - q0) < CarLength + MinGap) return false;
             return true;
         }
 
@@ -224,68 +301,170 @@ namespace CityGame.Cars
             return !_edgeNext.TryGetValue(LaneKey(st.Edge, DirOf(st)), out float t) || t <= _now;
         }
 
-        void Spawn(float dt)
+        bool EdgeAlive(RoadEdge e)
         {
-            IReadOnlyList<FlowSolver.Route> routes = _flow.Routes;
-            for (int i = 0; i < routes.Count && i < _acc.Count; i++)
+            return _graph.GetEdge(e.Id) == e;
+        }
+
+        // --- решения: поехать из дома, вернуться от цели ---
+
+        void Think(float dt)
+        {
+            foreach (Car car in _cars)
             {
-                _acc[i] += routes[i].Flow * CarsPerFlow * dt;
-                while (_acc[i] >= 1f)
+                if (car.State == State.Parked)
                 {
-                    if (_cars.Count >= MaxCars)
-                    {
-                        _acc[i] = 1f;
-                        break;
-                    }
-
-                    FlowSolver.RouteStep st = routes[i].Steps[0];
-                    if (_graph.GetEdge(st.Edge.Id) != st.Edge) { _acc[i] = 0f; break; }
-
-                    int dir = DirOf(st);
-                    float q0 = QOf(st.Edge, dir, st.From);
-                    if (!EdgeTokenFree(st) || !StartFree(st, q0))
-                    {
-                        _acc[i] = Mathf.Min(_acc[i], 1.5f); // ждём, не копим пачку
-                        break;
-                    }
-
-                    _edgeNext[LaneKey(st.Edge, dir)] = _now + EdgeHeadway(st.Edge);
-                    var car = new Car
-                    {
-                        Route = routes[i],
-                        Step = 0,
-                        Q = q0,
-                        Color = Palette[(_serial++ * 7 + i) % Palette.Length]
-                    };
-                    _cars.Add(car);
-                    // Сразу вносим в полосу, чтобы следующая за ним проверка видела его.
-                    long key = LaneKey(st.Edge, dir);
-                    if (!_lanes.TryGetValue(key, out List<Car> list))
-                    {
-                        list = _pool.Count > 0 ? _pool.Pop() : new List<Car>();
-                        _lanes[key] = list;
-                    }
-
-                    list.Add(car);
-                    _acc[i] -= 1f;
+                    car.Timer -= dt;
+                    if (car.Timer <= 0f) TryStartOutbound(car);
+                }
+                else if (car.State == State.Inside)
+                {
+                    car.Timer -= dt;
+                    if (car.Timer <= 0f) TryStartReturn(car);
                 }
             }
+        }
+
+        bool Launch(Car car, FlowSolver.Route route)
+        {
+            FlowSolver.RouteStep st = route.Steps[0];
+            if (!EdgeAlive(st.Edge)) return false;
+
+            int dir = DirOf(st);
+            float q0 = QOf(st.Edge, dir, st.From);
+            if (!EdgeTokenFree(st) || !StartFree(st, q0)) return false;
+
+            _edgeNext[LaneKey(st.Edge, dir)] = _now + EdgeHeadway(st.Edge);
+            car.Route = route;
+            car.Step = 0;
+            car.Q = q0;
+            car.Cleared = false;
+            car.State = State.Driving;
+            // Сразу вносим в полосу: следующая за ним проверка в этом кадре должна его видеть.
+            AddToLane(car, LaneKey(st.Edge, dir));
+            return true;
+        }
+
+        void TryStartOutbound(Car car)
+        {
+            if (_flow.Dirty) { car.Timer = 0.2f; return; }
+
+            District home = _model.Get(car.Home)?.District;
+            if (home == null) { car.Timer = 1f; return; }
+
+            // Выбор цели по потокам из расчёта: чем больше поток, тем чаще едут туда.
+            float total = 0f;
+            foreach (FlowSolver.Route r in _flow.Routes)
+                if (r.SrcDistrictId == home.Id) total += r.Flow;
+
+            if (total <= 0f) { car.Timer = Random.Range(1f, 2f); return; }
+
+            float pick = Random.value * total;
+            FlowSolver.Route chosen = null;
+            foreach (FlowSolver.Route r in _flow.Routes)
+            {
+                if (r.SrcDistrictId != home.Id) continue;
+                chosen = r;
+                pick -= r.Flow;
+                if (pick <= 0f) break;
+            }
+
+            if (chosen == null || !Launch(car, chosen)) { car.Timer = 0.3f; return; }
+            car.Returning = false;
+            car.GoalCell = chosen.DstCell;
+        }
+
+        void TryStartReturn(Car car)
+        {
+            if (_flow.Dirty) { car.Timer = 0.2f; return; }
+
+            District from = _model.Get(car.GoalCell)?.District;
+            District home = _model.Get(car.Home)?.District;
+            if (from == null || home == null) { GoHome(car); return; }
+
+            FlowSolver.Route found = null;
+            foreach (FlowSolver.Route r in _flow.Routes)
+                if (r.SrcDistrictId == from.Id && r.DstDistrictId == home.Id) { found = r; break; }
+
+            if (found == null) { GoHome(car); return; }
+            if (!Launch(car, found)) { car.Timer = 0.3f; return; }
+            car.Returning = true;
+            car.GoalCell = car.Home;
+        }
+
+        /// <summary>Пути нет: машина оказывается дома, а не пропадает.</summary>
+        void GoHome(Car car)
+        {
+            car.State = State.Parked;
+            car.Timer = Random.Range(ParkSeconds.x, ParkSeconds.y);
+            car.Placed = false;
+            car.Speed = 0f;
+            car.Braking = false;
+        }
+
+        void Arrive(Car car)
+        {
+            if (car.Returning)
+            {
+                car.State = State.Parked;
+                car.Timer = Random.Range(ParkSeconds.x, ParkSeconds.y);
+            }
+            else
+            {
+                car.State = State.Inside;
+                car.Timer = Random.Range(DwellSeconds.x, DwellSeconds.y);
+            }
+
+            car.Speed = 0f;
+            car.Braking = false;
+        }
+
+        /// <summary>Сеть перестроили под машиной: ищем путь от её точки к текущей цели.</summary>
+        void Reroute(Car car)
+        {
+            FlowSolver.Route r = _flow.RouteFrom(car.Pos, car.Dir, car.GoalCell, RerouteRadius);
+            if (r == null || r.Steps.Count == 0)
+            {
+                GoHome(car);
+                return;
+            }
+
+            car.Route = r;
+            car.Step = 0;
+            FlowSolver.RouteStep st = r.Steps[0];
+            car.Q = QOf(st.Edge, DirOf(st), st.From);
+            car.Cleared = false;
+        }
+
+        bool StepsAlive(Car car)
+        {
+            if (!EdgeAlive(car.Route.Steps[car.Step].Edge)) return false;
+            return car.Step + 1 >= car.Route.Steps.Count || EdgeAlive(car.Route.Steps[car.Step + 1].Edge);
         }
 
         void Move(float dt)
         {
             Stopped = 0;
+            OnRoad = 0;
             int n = _cars.Count;
             _rotate++;
             for (int k = 0; k < n; k++)
             {
                 Car car = _cars[(k + _rotate) % n];
-                if (car.Dead) continue;
+                if (car.State != State.Driving) continue;
+                OnRoad++;
+
+                if (!StepsAlive(car))
+                {
+                    // Расчёт ещё не обновлён: стоим на месте и ждём.
+                    car.Speed = 0f;
+                    if (!_flow.Dirty) Reroute(car);
+                    if (car.State != State.Driving) continue;
+                    if (!StepsAlive(car)) continue;
+                }
 
                 FlowSolver.RouteStep st = car.Route.Steps[car.Step];
                 RoadEdge e = st.Edge;
-                if (_graph.GetEdge(e.Id) != e) { car.Dead = true; continue; }
-
                 int dir = DirOf(st);
                 float q1 = QOf(e, dir, st.To);
                 bool last = car.Step == car.Route.Steps.Count - 1;
@@ -299,11 +478,8 @@ namespace CityGame.Cars
                 move = Mathf.Min(move, Mathf.Max(0f, stop - car.Q));
 
                 // На линии: пробуем получить талон на узел и следующий участок.
-                if (toNode && !car.Cleared && car.Q + move >= stop - 1e-4f)
-                {
-                    if (TryClear(car))
-                        car.Cleared = true;
-                }
+                if (toNode && !car.Cleared && car.Q + move >= stop - 1e-4f && TryClear(car))
+                    car.Cleared = true;
 
                 car.Q += move;
 
@@ -311,15 +487,13 @@ namespace CityGame.Cars
                 {
                     if (last)
                     {
-                        car.Dead = true;
+                        Arrive(car);
                         continue;
                     }
 
                     FlowSolver.RouteStep next = car.Route.Steps[car.Step + 1];
                     float q0 = QOf(next.Edge, DirOf(next), next.From);
-                    if (_graph.GetEdge(next.Edge.Id) != next.Edge) { car.Dead = true; continue; }
-
-                    if (StartFree(next, q0))
+                    if (EdgeAlive(next.Edge) && StartFree(next, q0))
                     {
                         car.Step++;
                         car.Q = q0;
@@ -335,9 +509,6 @@ namespace CityGame.Cars
                 car.Braking = car.Speed < vFree * 0.2f;
                 if (car.Braking) Stopped++;
             }
-
-            for (int i = _cars.Count - 1; i >= 0; i--)
-                if (_cars[i].Dead) _cars.RemoveAt(i);
         }
 
         bool TryClear(Car car)
@@ -391,18 +562,29 @@ namespace CityGame.Cars
 
             foreach (Car car in _cars)
             {
-                if (car.Dead) continue;
-                FlowSolver.RouteStep st = car.Route.Steps[car.Step];
-                RoadEdge e = st.Edge;
-                int dir = DirOf(st);
-                float s = dir > 0 ? car.Q : e.Length - car.Q;
+                if (car.State == State.Inside) continue;
 
-                Vector2 tan;
-                Vector2 p = Sample(e.Points, s, out tan);
-                Vector2 fwd = tan * dir;
-                Vector2 right = new Vector2(fwd.y, -fwd.x);
-                float off = e.OneWay != 0 ? 0f : LaneOffset * CellSize;
-                Vector2 target = p + right * off;
+                Vector2 target;
+                Vector2 fwd;
+                if (car.State == State.Driving)
+                {
+                    FlowSolver.RouteStep st = car.Route.Steps[car.Step];
+                    RoadEdge e = st.Edge;
+                    int dir = DirOf(st);
+                    float s = dir > 0 ? car.Q : e.Length - car.Q;
+
+                    Vector2 tan;
+                    Vector2 p = Sample(e.Points, s, out tan);
+                    fwd = tan * dir;
+                    Vector2 rightV = new Vector2(fwd.y, -fwd.x);
+                    float off = e.OneWay != 0 ? 0f : LaneOffset * CellSize;
+                    target = p + rightV * off;
+                }
+                else
+                {
+                    target = ParkedPos(car.Home);
+                    fwd = Vector2.right;
+                }
 
                 if (!car.Placed)
                 {
@@ -419,12 +601,15 @@ namespace CityGame.Cars
 
                 // На мосту машина сверху, если едет вдоль полотна моста, иначе под ним.
                 bool upper = false;
-                var cell = new Vector2Int(Mathf.FloorToInt(car.Pos.x / CellSize), Mathf.FloorToInt(car.Pos.y / CellSize));
-                JunctionType type = _map.TypeAt(cell);
-                if (JunctionSpecs.IsOverpass(type) && Side.Count(_map.Mask(cell)) == 4)
+                if (car.State == State.Driving)
                 {
-                    bool horizontal = Mathf.Abs(car.Dir.x) > Mathf.Abs(car.Dir.y);
-                    upper = type == JunctionType.Overpass ? horizontal : !horizontal;
+                    var cell = new Vector2Int(Mathf.FloorToInt(car.Pos.x / CellSize), Mathf.FloorToInt(car.Pos.y / CellSize));
+                    JunctionType type = _map.TypeAt(cell);
+                    if (JunctionSpecs.IsOverpass(type) && Side.Count(_map.Mask(cell)) == 4)
+                    {
+                        bool horizontal = Mathf.Abs(car.Dir.x) > Mathf.Abs(car.Dir.y);
+                        upper = type == JunctionType.Overpass ? horizontal : !horizontal;
+                    }
                 }
 
                 MeshBatch m = upper ? _highBatch : _lowBatch;

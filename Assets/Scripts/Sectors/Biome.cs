@@ -8,7 +8,8 @@ namespace CityGame.Sectors
         Standard = 0,
         Snow = 1,
         Mountain = 2,
-        Desert = 3
+        Desert = 3,
+        Sea = 4
     }
 
     /// <summary>Числа и цвета биомов, временные.</summary>
@@ -23,6 +24,11 @@ namespace CityGame.Sectors
         /// <summary>Доля клеток стандартного биома с деревом.</summary>
         public const float TreeDensity = 0.5f;
 
+        public const int Count = 5;
+
+        /// <summary>Море: здания и мосты дороже на 20%.</summary>
+        public const float SeaCostFactor = 1.2f;
+
         public static readonly Color ClosedColor = new Color32(0x1F, 0x23, 0x29, 0xFF);
 
         public static Color Ground(Biome b)
@@ -32,6 +38,7 @@ namespace CityGame.Sectors
                 case Biome.Snow: return new Color32(0xF7, 0xFA, 0xFC, 0xFF);
                 case Biome.Mountain: return new Color32(0x9A, 0xA0, 0xA6, 0xFF);
                 case Biome.Desert: return new Color32(0xE8, 0xD5, 0xA3, 0xFF);
+                case Biome.Sea: return new Color32(0xA9, 0xD6, 0xF2, 0xFF);
                 default: return new Color32(0xCD, 0xE5, 0xB0, 0xFF);
             }
         }
@@ -39,7 +46,14 @@ namespace CityGame.Sectors
         /// <summary>Множитель цены зданий.</summary>
         public static float BuildCostFactor(Biome b)
         {
+            if (b == Biome.Sea) return SeaCostFactor;
             return b == Biome.Snow || b == Biome.Desert ? 0.8f : 1f;
+        }
+
+        /// <summary>Множитель цены клетки дороги. На море это мост, он дороже.</summary>
+        public static float RoadCostFactor(Biome b)
+        {
+            return b == Biome.Sea ? SeaCostFactor : 1f;
         }
 
         public static bool CanBuildBuildings(Biome b)
@@ -54,6 +68,7 @@ namespace CityGame.Sectors
                 case Biome.Snow: return "Снег";
                 case Biome.Mountain: return "Горы";
                 case Biome.Desert: return "Пустыня";
+                case Biome.Sea: return "Море";
                 default: return "Лес";
             }
         }
@@ -77,7 +92,10 @@ namespace CityGame.Sectors
             float height = Noise(x * 0.45f, y * 0.45f, Seed);
             float temp = Noise(x * 0.35f + 100f, y * 0.35f + 100f, Seed + 1);
 
+            float wet = Noise(x * 0.40f + 300f, y * 0.40f - 200f, Seed + 2);
+
             if (height > 0.68f) return Biome.Mountain;
+            if (wet > 0.70f) return Biome.Sea;
             if (temp < 0.28f) return Biome.Snow;
             if (temp > 0.72f) return Biome.Desert;
             return Biome.Standard;
