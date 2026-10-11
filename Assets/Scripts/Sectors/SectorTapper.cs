@@ -1,0 +1,64 @@
+using CityGame.Roads;
+using System;
+using UnityEngine;
+
+namespace CityGame.Sectors
+{
+    /// <summary>
+    /// Режим «Расширить»: тап по доступному закрытому сектору выделяет его,
+    /// дальше интерфейс спрашивает подтверждение и вызывает ConfirmPending.
+    /// </summary>
+    public sealed class SectorTapper : MonoBehaviour
+    {
+        public Camera Cam;
+        public Func<Vector2, bool> IsPointerBlocked;
+
+        SectorMap _map;
+        SectorRenderer _renderer;
+
+        public bool HasPending => _renderer != null && _renderer.Pending.HasValue;
+
+        public void Bind(SectorMap map, SectorRenderer view)
+        {
+            _map = map;
+            _renderer = view;
+        }
+
+        void Awake()
+        {
+            if (Cam == null) Cam = Camera.main;
+        }
+
+        void OnDisable()
+        {
+            if (_renderer != null) _renderer.SetPending(null);
+        }
+
+        public void ConfirmPending()
+        {
+            if (!HasPending) return;
+            HexCoord h = _renderer.Pending.Value;
+            _renderer.SetPending(null);
+            _map.TryOpen(h);
+        }
+
+        public void CancelPending()
+        {
+            if (_renderer != null) _renderer.SetPending(null);
+        }
+
+        void Update()
+        {
+            if (_map == null || Cam == null) return;
+
+            PointerInput.Poll();
+            if (PointerInput.Gesture || !PointerInput.Down) return;
+            if (IsPointerBlocked != null && IsPointerBlocked(PointerInput.Position)) return;
+
+            Vector3 w = Cam.ScreenToWorldPoint(new Vector3(PointerInput.Position.x, PointerInput.Position.y,
+                -Cam.transform.position.z));
+            HexCoord h = _map.SectorAt(new Vector2(w.x, w.y));
+            _renderer.SetPending(_map.CanOpen(h) ? h : (HexCoord?)null);
+        }
+    }
+}
