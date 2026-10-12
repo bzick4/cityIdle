@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using CityGame.Roads;
+using CityGame.Buildings;
 using UnityEngine;
 
 namespace CityGame.Sectors
@@ -19,6 +20,35 @@ namespace CityGame.Sectors
         [Range(0.9f, 1f)] public float Gap = 0.985f;
         public float CellSize = 1f;
         [Range(0.01f, 0.1f)] public float GridLine = 0.04f;
+
+        [Header("Анимация открытия сектора (подкручивай здесь или в инспекторе)")]
+        [Tooltip("Сколько секунд сектор опускается на место")]
+        public float DropDuration = 1.1f;
+        [Tooltip("Высота, с которой он начинает падать, в размерах сектора (0.5 = полсектора вверх)")]
+        public float DropHeight = 0.5f;
+        [Tooltip("Мягкий «подскок» при приземлении. 0 = без подскока, 1 = заметная пружина")]
+        [Range(0f, 1f)] public float DropSoftness = 0.25f;
+        [Tooltip("Начальный масштаб плитки. 1 = без изменения размера, меньше = вырастает при падении")]
+        [Range(0.6f, 1f)] public float DropStartScale = 0.92f;
+        [Tooltip("Какую часть времени сектор проявляется из прозрачности. 0.5 = за первую половину падения")]
+        [Range(0.05f, 1f)] public float DropFadeShare = 0.5f;
+
+        /// <summary>Сектора, которые сейчас падают. Остальные рендереры не рисуют их в общих мешах.</summary>
+        public readonly HashSet<HexCoord> Dropping = new HashSet<HexCoord>();
+
+        /// <summary>Анимация закончилась и сектор нарисован обычным образом.</summary>
+        public event System.Action DropFinished;
+
+        sealed class Drop
+        {
+            public HexCoord H;
+            public float Start;
+            public GameObject Root;
+            public readonly List<Material> Mats = new List<Material>();
+            public readonly List<Color> Base = new List<Color>();
+        }
+
+        readonly List<Drop> _drops = new List<Drop>();
 
         SectorMap _map;
         BiomeMap _biomes;
@@ -45,6 +75,82 @@ namespace CityGame.Sectors
             if (_map != null) _map.Changed -= Redraw;
         }
 
+        /// <summary>Запускает падение сектора. Вызывается перед открытием в SectorMap.</summary>
+        public void BeginDrop(HexCoord h)
+        {
+            Dropping.Add(h);
+            _drops.Add(new Drop { H = h, Start = Time.time });
+        }
+
+        TreeRenderer _trees;
+
+        void Update()
+        {
+            if (_drops.Count == 0) return;
+            bool finished = false;
+            for (int i = _drops.Count - 1; i >= 0; i--)
+            {
+                Drop d = _drops[i];
+                float t = (Time.time - d.Start) / Mathf.Max(0.05f, DropDuration);
+                if (t >= 1f)
+                {
+                    Dropping.Remove(d.H);
+                    DestroyDrop(d);
+                    _drops.RemoveAt(i);
+                    finished = true;
+                    continue;
+                }
+
+                ApplyDrop(d, t);
+            }
+
+            if (finished)
+            {
+                Redraw();
+                DropFinished?.Invoke();
+            }
+        }
+
+        /// <summary>Мягкое замедление к концу с едва заметным подскоком (easeOutBack).</summary>
+        float Ease(float t)
+        {
+            float c1 = DropSoftness * 1.2f;
+            float c3 = c1 + 1f;
+            float u = t - 1f;
+            return 1f + c3 * u * u * u + c1 * u * u;
+        }
+
+        void ApplyDrop(Drop d, float t)
+        {
+            if (d.Root == null) return;
+            float e = Ease(Mathf.Clamp01(t));
+            Vector2 c = HexMath.ToWorld(d.H, _map.HexSize);
+            float lift = (1f - e) * DropHeight * _map.HexSize;
+            d.Root.transform.position = new Vector3(c.x, c.y + lift, 0f);
+            d.Root.transform.localScale = Vector3.one * Mathf.LerpUnclamped(DropStartScale, 1f, e);
+            float a = Mathf.Clamp01(t / Mathf.Max(0.05f, DropFadeShare));
+            a = a * a * (3f - 2f * a);
+            for (int i = 0; i < d.Mats.Count; i++)
+            {
+                Color col = d.Base[i];
+                col.a *= a;
+                d.Mats[i].color = col;
+            }
+        }
+
+        void DestroyDrop(Drop d)
+        {
+            if (d.Root == null) return;
+            foreach (MeshFilter f in d.Root.GetComponentsInChildren<MeshFilter>())
+                if (f.sharedMesh != null) UnityEngine.Object.Destroy(f.sharedMesh);
+            foreach (Material m in d.Mats)
+                if (m != null) UnityEngine.Object.Destroy(m);
+            UnityEngine.Object.Destroy(d.Root);
+            d.Root = null;
+            d.Mats.Clear();
+            d.Base.Clear();
+        }
+
         public void SetPending(HexCoord? h)
         {
             Pending = h;
@@ -67,7 +173,10 @@ namespace CityGame.Sectors
                 frontier[i] = new List<HexCoord>();
             }
 
-            foreach (HexCoord h in _map.Open) open[(int)_biomes.BiomeOf(h)].Add(h);
+            foreach (HexCoord h in _map.Open)
+                if (!Dropping.Contains(h)) open[(int)_biomes.BiomeOf(h)].Add(h);
+            // Под падающим сектором остаётся тёмная закрытая плитка, на неё он и приземляется.
+            foreach (Drop d in _drops) frontier[(int)_biomes.BiomeOf(d.H)].Add(d.H);
             foreach (HexCoord h in _map.Frontier)
             {
                 if (Pending.HasValue && Pending.Value == h) pendingList.Add(h);
@@ -85,6 +194,53 @@ namespace CityGame.Sectors
             }
 
             _pending = Make("Pending sector", pendingList, PendingColor, -29);
+
+            foreach (Drop d in _drops) BuildDrop(d);
+        }
+
+        void BuildDrop(Drop d)
+        {
+            DestroyDrop(d);
+            if (_trees == null) _trees = GetComponent<TreeRenderer>();
+            Vector2 c = HexMath.ToWorld(d.H, _map.HexSize);
+            Biome b = _biomes.BiomeOf(d.H);
+            var one = new List<HexCoord> { d.H };
+
+            d.Root = new GameObject("Dropping sector");
+            d.Root.transform.SetParent(transform, false);
+
+            // Плитка и сетка. Координаты локальные, чтобы масштаб шёл от центра сектора.
+            GameObject ground = Make("Drop ground", one, BiomeSpecs.Ground(b), -19, c);   // выше деревьев соседей, пока сектор в воздухе
+            GameObject grid = MakeGrid(one, Color.Lerp(BiomeSpecs.Ground(b), Color.black, 0.07f), c);
+            if (grid != null) grid.GetComponent<MeshRenderer>().sortingOrder = -18;
+            AddToDrop(d, ground);
+            AddToDrop(d, grid);
+
+            if (_trees != null)
+            {
+                var batch = new MeshBatch();
+                _trees.AddHex(d.H, batch, c);
+                if (batch.V.Count > 0)
+                {
+                    var go = new GameObject("Drop trees");
+                    go.AddComponent<MeshFilter>().sharedMesh = batch.ToMesh();
+                    var mr = go.AddComponent<MeshRenderer>();
+                    mr.sharedMaterial = new Material(Shader.Find("Sprites/Default")) { color = Color.white };
+                    mr.sortingOrder = _trees.SortingOrder + 3;
+                    AddToDrop(d, go);
+                }
+            }
+
+            ApplyDrop(d, Mathf.Clamp01((Time.time - d.Start) / Mathf.Max(0.05f, DropDuration)));
+        }
+
+        static void AddToDrop(Drop d, GameObject go)
+        {
+            if (go == null) return;
+            go.transform.SetParent(d.Root.transform, false);
+            var r = go.GetComponent<MeshRenderer>();
+            d.Mats.Add(r.sharedMaterial);
+            d.Base.Add(r.sharedMaterial.color);
         }
 
         static void Add(List<GameObject> list, GameObject go)
@@ -108,7 +264,7 @@ namespace CityGame.Sectors
         }
 
         /// <summary>Лёгкая сетка клеток внутри открытых секторов. Клетка принадлежит сектору по своему центру.</summary>
-        GameObject MakeGrid(List<HexCoord> hexes, Color gridColor)
+        GameObject MakeGrid(List<HexCoord> hexes, Color gridColor, Vector2 origin = default)
         {
             var verts = new List<Vector3>();
             var tris = new List<int>();
@@ -134,12 +290,13 @@ namespace CityGame.Sectors
                         float lx = ix * cs;
                         float by = iy * cs;
                         // Левая и нижняя грани есть у каждой клетки, правая и верхняя только на краю области.
-                        Line(verts, tris, new Vector2(lx - t, by - t), new Vector2(lx + t, by + cs + t));
-                        Line(verts, tris, new Vector2(lx - t, by - t), new Vector2(lx + cs + t, by + t));
+                        Vector2 o = origin;
+                        Line(verts, tris, new Vector2(lx - t, by - t) - o, new Vector2(lx + t, by + cs + t) - o);
+                        Line(verts, tris, new Vector2(lx - t, by - t) - o, new Vector2(lx + cs + t, by + t) - o);
                         if (!InOpen(ix + 1, iy))
-                            Line(verts, tris, new Vector2(lx + cs - t, by - t), new Vector2(lx + cs + t, by + cs + t));
+                            Line(verts, tris, new Vector2(lx + cs - t, by - t) - o, new Vector2(lx + cs + t, by + cs + t) - o);
                         if (!InOpen(ix, iy + 1))
-                            Line(verts, tris, new Vector2(lx - t, by + cs - t), new Vector2(lx + cs + t, by + cs + t));
+                            Line(verts, tris, new Vector2(lx - t, by + cs - t) - o, new Vector2(lx + cs + t, by + cs + t) - o);
                     }
                 }
             }
@@ -181,7 +338,7 @@ namespace CityGame.Sectors
             t.Add(i); t.Add(i + 2); t.Add(i + 3);
         }
 
-        GameObject Make(string goName, List<HexCoord> hexes, Color color, int order)
+        GameObject Make(string goName, List<HexCoord> hexes, Color color, int order, Vector2 origin = default)
         {
             if (hexes.Count == 0) return null;
 
@@ -191,11 +348,12 @@ namespace CityGame.Sectors
             {
                 Vector2 c = HexMath.ToWorld(h, _map.HexSize);
                 int start = verts.Count;
+                c -= origin;
                 verts.Add(c);
                 for (int i = 0; i < 6; i++)
                 {
                     Vector2 corner = HexMath.Corner(h, i, _map.HexSize);
-                    verts.Add(c + (corner - c) * Gap);
+                    verts.Add(c + (corner - (c + origin)) * Gap);
                 }
 
                 // Углы идут против часовой стрелки, поэтому треугольники собираем наоборот.

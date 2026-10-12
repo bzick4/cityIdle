@@ -303,9 +303,11 @@ namespace CityGame.CellRoads
             LockExistingHighways();
 
             bool hasRoadCell = false;
-            var highwayEndpoints = new bool[path.Count];
+            var highwayEndpoints = new bool[path.Count]; // клетки, чьё направление не перезаписываем (шоссе и обычная дорога)
             for (int i = 0; i < path.Count; i++)
             {
+                if (i + 1 < path.Count && Side.FromDelta(path[i + 1] - path[i]) == 0)
+                    return false;
                 HighwayLane lane = LaneAt(path[i]);
                 bool highway = lane.Active && !lane.OneWay;
                 highwayEndpoints[i] = highway;
@@ -319,7 +321,20 @@ namespace CityGame.CellRoads
                     if (outgoing != incoming) return false;
                 }
                 if (_masks.TryGetValue(path[i], out int existingMask) && existingMask != 0 && !highway)
-                    return false;
+                {
+                    // Обычная двусторонняя дорога: односторонняя может её пересечь или примкнуть к ней
+                    // (получится перекрёсток), но не может идти вдоль неё по тем же клеткам.
+                    int inSide = i > 0 ? Side.FromDelta(path[i] - path[i - 1]) : 0;
+                    int outSide = i + 1 < path.Count ? Side.FromDelta(path[i + 1] - path[i]) : 0;
+                    if (i > 0 && i + 1 < path.Count && outSide != inSide) return false; // поворот прямо на дороге
+                    int mine = 0;
+                    if (inSide != 0) mine |= Side.Opposite(inSide);
+                    if (outSide != 0) mine |= outSide;
+                    if ((existingMask & mine) != 0) return false; // уже соединено: идём вдоль дороги
+                    highwayEndpoints[i] = true;               // клетка остаётся обычной, направление не трогаем
+                    continue;
+                }
+
                 if (!highway) hasRoadCell = true;
 
                 if (i + 1 < path.Count && Side.FromDelta(path[i + 1] - path[i]) == 0)

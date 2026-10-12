@@ -116,7 +116,7 @@ namespace CityGame.Buildings
 
         GUIStyle StyleColor(GUIStyle source, Color color)
         {
-            source.normal.textColor = color;
+            CityGame.Buildings.CityDebugHud.SetText(source, color);
             return source;
         }
 

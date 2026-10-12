@@ -61,6 +61,19 @@ namespace CityGame.Sectors
             return b != Biome.Mountain;
         }
 
+        /// <summary>Короткая подсказка про биом для окна открытия области.</summary>
+        public static string Hint(Biome b)
+        {
+            switch (b)
+            {
+                case Biome.Snow: return "Строить дешевле на 20%";
+                case Biome.Mountain: return "Только дороги, здания не построить";
+                case Biome.Desert: return "Строить дешевле на 20%";
+                case Biome.Sea: return "Здания и мосты дороже на 20%";
+                default: return "Бонус к налогам +10%, пока осталось 30% деревьев";
+            }
+        }
+
         public static string Title(Biome b)
         {
             switch (b)

@@ -276,6 +276,8 @@ namespace CityGame.Buildings
             sectorRenderer.Bind(Sectors, Biomes.Map);
             var trees = GetOrAdd<TreeRenderer>();
             trees.CellSize = CellSize;
+            trees.Drops = sectorRenderer;
+            sectorRenderer.DropFinished += trees.Redraw;
             trees.Bind(Biomes, Sectors);
             Tapper = GetOrAdd<SectorTapper>();
             Tapper.Bind(Sectors, sectorRenderer);

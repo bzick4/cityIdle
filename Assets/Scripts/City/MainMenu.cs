@@ -106,9 +106,9 @@ namespace CityGame.Buildings
         void Label(Rect r, string text, GUIStyle style, Color c)
         {
             Color keep = style.normal.textColor;
-            style.normal.textColor = c;
+            CityDebugHud.SetText(style, c);
             GUI.Label(r, text, style);
-            style.normal.textColor = keep;
+            CityDebugHud.SetText(style, keep);
         }
 
         /// <summary>Плашка со скосами и тонкой рамкой.</summary>

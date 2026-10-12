@@ -18,6 +18,9 @@ namespace CityGame.Sectors
 
         public bool HasPending => _renderer != null && _renderer.Pending.HasValue;
 
+        /// <summary>Выбранный сектор, ожидающий подтверждения.</summary>
+        public HexCoord? PendingHex => _renderer != null ? _renderer.Pending : null;
+
         public void Bind(SectorMap map, SectorRenderer view)
         {
             _map = map;
@@ -39,6 +42,8 @@ namespace CityGame.Sectors
             if (!HasPending) return;
             HexCoord h = _renderer.Pending.Value;
             _renderer.SetPending(null);
+            if (!_map.CanOpen(h)) return;
+            _renderer.BeginDrop(h);   // сначала анимация, потом открытие: рендереры увидят «падающий» сектор
             _map.TryOpen(h);
         }
 

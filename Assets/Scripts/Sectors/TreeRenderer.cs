@@ -10,6 +10,9 @@ namespace CityGame.Sectors
         public float CellSize = 1f;
         public int SortingOrder = -20;
 
+        /// <summary>Сектора, которые сейчас «падают»: их деревья рисует SectorRenderer вместе с плиткой.</summary>
+        public SectorRenderer Drops;
+
         Biomes _biomes;
         SectorMap _sectors;
         readonly MeshBatch _batch = new MeshBatch();
@@ -33,15 +36,12 @@ namespace CityGame.Sectors
             if (_biomes != null) _biomes.Changed -= Redraw;
         }
 
-        void Redraw()
+        /// <summary>Добавляет деревья одного сектора. origin вычитается из координат (для локальной сетки).</summary>
+        public void AddHex(HexCoord h, MeshBatch batch, Vector2 origin)
         {
             if (_biomes == null) return;
             float cs = CellSize;
-            _batch.Clear();
-
-            foreach (HexCoord h in _sectors.Open)
-            {
-                if (_biomes.Map.BiomeOf(h) != Biome.Standard) continue;
+                if (_biomes.Map.BiomeOf(h) != Biome.Standard) return;
                 Vector2 c = HexMath.ToWorld(h, _sectors.HexSize);
                 float rx = _sectors.HexSize * 0.8660254f + cs;
                 float ry = _sectors.HexSize + cs;
@@ -62,10 +62,21 @@ namespace CityGame.Sectors
                     float r = cs * (0.22f + ((m >> 16) & 0xFF) / 255f * 0.10f);
                     Vector2 p = center + new Vector2(jx, jy);
 
-                    _batch.Disc(p + new Vector2(0.05f, -0.06f) * cs, r, 24, Shadow);
-                    _batch.Disc(p, r, 24, Crown);
-                    _batch.Disc(p + new Vector2(-0.35f, 0.4f) * r, r * 0.55f, 16, Light);
+                    batch.Disc(p - origin + new Vector2(0.05f, -0.06f) * cs, r, 24, Shadow);
+                    batch.Disc(p - origin, r, 24, Crown);
+                    batch.Disc(p - origin + new Vector2(-0.35f, 0.4f) * r, r * 0.55f, 16, Light);
                 }
+        }
+
+        public void Redraw()
+        {
+            if (_biomes == null) return;
+            _batch.Clear();
+
+            foreach (HexCoord h in _sectors.Open)
+            {
+                if (Drops != null && Drops.Dropping.Contains(h)) continue;
+                AddHex(h, _batch, Vector2.zero);
             }
 
             if (_view == null)

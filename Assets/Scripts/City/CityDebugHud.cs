@@ -48,6 +48,7 @@ namespace CityGame.Buildings
         Texture2D[] _junctionIcons;
         GUIStyle _lblCard, _lblMenuTitle, _lblMenuCategory;
         bool _exitRequested;
+        GUIStyle _lblDiag;
         GUIStyle _lbl, _lblSmall, _lblSmallRight, _lblBig, _lblCenter, _lblShop, _lblAction;
 
         public void Bind(CitySystem city)
@@ -164,11 +165,21 @@ namespace CityGame.Buildings
             return tex;
         }
 
+        /// <summary>
+        /// Один цвет текста во всех состояниях стиля. Иначе под пальцем или курсором (hover/active/focused)
+        /// IMGUI подставляет цвет из скина, и текст сливается с фоном.
+        /// </summary>
+        internal static void SetText(GUIStyle s, Color c)
+        {
+            s.normal.textColor = s.hover.textColor = s.active.textColor = s.focused.textColor = c;
+            s.onNormal.textColor = s.onHover.textColor = s.onActive.textColor = s.onFocused.textColor = c;
+        }
+
         internal static GUIStyle Tinted(Texture2D tex, Color color, int border)
         {
             var s = new GUIStyle();
             s.normal.background = tex;
-            s.normal.textColor = Color.black;
+            SetText(s, Color.black);
             s.border = new RectOffset(border, border, border, border);
             // Цвет рисуется через GUI.color при вызове.
             return s;
@@ -183,7 +194,7 @@ namespace CityGame.Buildings
                 fontStyle = fontStyle,
                 wordWrap = true
             };
-            s.normal.textColor = Color.black;
+            SetText(s, Color.black);
             return s;
         }
 
@@ -211,6 +222,8 @@ namespace CityGame.Buildings
             _lblMenuTitle = Label(15, TextAnchor.MiddleLeft, FontStyle.Bold);
             _lblMenuCategory = Label(11, TextAnchor.MiddleCenter, FontStyle.Bold);
             _lblSmall = Label(11, TextAnchor.UpperLeft);
+            _lblDiag = Label(10, TextAnchor.UpperLeft);
+            SetText(_lblDiag, new Color32(0x6B, 0x74, 0x80, 0xFF));
             _lblSmallRight = Label(11, TextAnchor.MiddleRight);
             _lblBig = Label(18, TextAnchor.MiddleRight, FontStyle.Bold);
             _lblCenter = Label(14, TextAnchor.MiddleCenter);
@@ -282,6 +295,13 @@ namespace CityGame.Buildings
                 top = DrawHighway(w, top);
             }
 
+            if (_city.Tapper.HasPending)
+            {
+                DrawSectorDialog(w, top);
+                top = _dialogRect.y - 6f;
+            }
+            else _dialogRect = Rect.zero;
+
             // Подсказка над всеми панелями.
             if (Time.unscaledTime < _toastUntil)
             {
@@ -290,16 +310,39 @@ namespace CityGame.Buildings
                 GUI.Label(r, _toast, _lblCenter);
             }
 
-            // Подтверждение открытия сектора.
-            if (_city.Tapper.HasPending)
-            {
-                _dialogRect = new Rect(w * 0.5f - 130, h * 0.45f - 60, 260, 120);
-                GUI.Box(_dialogRect, "Открыть эту область?");
-                if (GUI.Button(new Rect(_dialogRect.x + 15, _dialogRect.y + 50, 110, 48), "Открыть"))
-                    _city.Tapper.ConfirmPending();
-                if (GUI.Button(new Rect(_dialogRect.x + 135, _dialogRect.y + 50, 110, 48), "Отмена"))
-                    _city.Tapper.CancelPending();
-            }
+        }
+
+        void DrawSectorDialog(float w, float top)
+        {
+            CityGame.Roads.HexCoord hex = _city.Tapper.PendingHex.Value;
+            CityGame.Sectors.Biome biome = _city.Biomes.Map.BiomeOf(hex);
+            Color ground = CityGame.Sectors.BiomeSpecs.Ground(biome);
+
+            const float panelH = 128f;
+            _dialogRect = new Rect(8f, top - panelH, w - 16f, panelH);
+            Draw(_dialogRect, _panel, PanelColor);
+
+            // Шестиугольник цвета биома, как выбранный сектор на карте.
+            float hx = _dialogRect.x + 14f, hy = _dialogRect.y + 14f, hs = 52f;
+            Draw(new Rect(hx, hy, hs, hs), _panel, ground);
+            GUI.DrawTexture(new Rect(hx + 7f, hy + 7f, hs - 14f, hs - 14f), _icons[(int)Tool.Expand - 1],
+                ScaleMode.ScaleToFit, true);
+
+            float tx = hx + hs + 12f;
+            GUI.Label(new Rect(tx, _dialogRect.y + 10f, _dialogRect.width - (tx - _dialogRect.x) - 10f, 26f),
+                "НОВАЯ ОБЛАСТЬ · " + CityGame.Sectors.BiomeSpecs.Title(biome).ToUpper(), _lblMenuTitle);
+            GUI.Label(new Rect(tx, _dialogRect.y + 36f, _dialogRect.width - (tx - _dialogRect.x) - 10f, 36f),
+                CityGame.Sectors.BiomeSpecs.Hint(biome), _lblSmall);
+
+            float gap = 8f;
+            float bw = (_dialogRect.width - 28f - gap) * 0.6f;
+            var open = new Rect(_dialogRect.x + 14f, _dialogRect.y + 78f, bw, 40f);
+            var cancel = new Rect(open.xMax + gap, open.y, _dialogRect.width - 28f - gap - bw, 40f);
+            if (DrawActionButton(open, "ОТКРЫТЬ", ShopColor, new Color32(0x2C, 0x3A, 0x40, 0xFF), true))
+                _city.Tapper.ConfirmPending();
+            if (DrawActionButton(cancel, "ОТМЕНА", new Color32(0xF7, 0xF7, 0xF7, 0xFF),
+                    new Color32(0x3B, 0x46, 0x52, 0xFF), true))
+                _city.Tapper.CancelPending();
         }
 
         /// <summary>
@@ -346,7 +389,7 @@ namespace CityGame.Buildings
             if (home)
             {
                 float gap = 6f;
-                float cardW = (panel.width - 24f - gap * 2f) / 3f;
+                float cardW = (panel.width - 24f - gap * 3f) / 4f;
                 float cardH = 84f;
                 float x = panel.x + 8f;
                 float y = panel.y + 44f;
@@ -356,6 +399,8 @@ namespace CityGame.Buildings
                     ToolPage.Roads, new Color32(0xE6, 0xE9, 0xEC, 0xFF));
                 DrawCategoryCard(new Rect(x + (cardW + gap) * 2f, y, cardW, cardH), "СЛУЖБЫ", _icons[(int)Tool.Service - 1],
                     ToolPage.Services, new Color32(0xF8, 0xE9, 0xE8, 0xFF));
+                // «Снести» не категория, а режим: нажатие сразу включает инструмент.
+                DrawEraseCard(new Rect(x + (cardW + gap) * 3f, y, cardW, cardH));
                 return panel.y - 6f;
             }
 
@@ -367,7 +412,7 @@ namespace CityGame.Buildings
 
             Tool[] tools = _toolPage == ToolPage.Roads
                 ? new[] { Tool.Road, Tool.Highway, Tool.OneWay, Tool.Junction }
-                : new[] { Tool.Residential, Tool.Commercial, Tool.Industrial, Tool.Expand, Tool.Erase };
+                : new[] { Tool.Residential, Tool.Commercial, Tool.Industrial, Tool.Expand };
             DrawToolPage(panel, tools);
             return panel.y - 6f;
         }
@@ -382,6 +427,17 @@ namespace CityGame.Buildings
                 _lblMenuCategory);
             if (GUI.Button(r, GUIContent.none, GUIStyle.none))
                 _toolPage = page;
+        }
+
+        void DrawEraseCard(Rect r)
+        {
+            bool selected = _city.CurrentTool == Tool.Erase;
+            Draw(r, _panel, selected ? new Color32(0xF4, 0xB8, 0xB0, 0xFF) : new Color32(0xF8, 0xE1, 0xDE, 0xFF));
+            float size = Mathf.Min(38f, r.width * 0.42f);
+            GUI.DrawTexture(new Rect(r.x + (r.width - size) * 0.5f, r.y + 7f, size, size),
+                _icons[(int)Tool.Erase - 1], ScaleMode.ScaleToFit, true);
+            GUI.Label(new Rect(r.x + 3f, r.y + r.height - 31f, r.width - 6f, 24f), "СНЕСТИ", _lblMenuCategory);
+            if (GUI.Button(r, GUIContent.none, GUIStyle.none)) SelectFromMenu(Tool.Erase);
         }
 
         void DrawToolPage(Rect panel, Tool[] tools)
@@ -452,22 +508,32 @@ namespace CityGame.Buildings
             int rows = Mathf.Min(districts.Count, 6);
             int extra = _city.Flow.UnconnectedDistricts > 0 ? 1 : 0;
             float diagH = ShowDiagnostics ? 34f : 0f;
-            float panelH = 10f + 36f + (rows + extra) * 20f + (rows + extra > 0 ? 6f : 0f) + diagH + 8f;
+            float panelH = 10f + 38f + (rows + extra) * 20f + (rows + extra > 0 ? 6f : 0f) + diagH + 8f;
             _popupRect = new Rect(8f, top - panelH, w - 16f, panelH);
             Draw(_popupRect, _panel, PanelColor);
 
             float x = _popupRect.x + 10f;
             float y = _popupRect.y + 8f;
 
+            Color light = new Color32(0xF7, 0xF7, 0xF4, 0xFF);
+            Color ink = new Color32(0x3B, 0x45, 0x52, 0xFF);
+            Color inkOn = new Color32(0x2C, 0x3A, 0x40, 0xFF);
+
+            // Переключатели в виде таких же плашек, как кнопки меню: включённый залит цветом магазина.
             bool cars = _city.Traffic.Visible;
-            bool newCars = GUI.Toggle(new Rect(x, y, 100f, 30f), cars, "Авто", GUI.skin.button);
-            if (newCars != cars) _city.Traffic.Visible = newCars;
+            var carsRect = new Rect(x, y, 96f, 32f);
+            if (DrawActionButton(carsRect, cars ? "АВТО ✓" : "АВТО", cars ? ShopColor : light, cars ? inkOn : ink, true))
+                _city.Traffic.Visible = !cars;
 
             bool heat = _city.Heatmap.Visible;
-            bool newHeat = GUI.Toggle(new Rect(x + 108f, y, 120f, 30f), heat, "Нагрузка", GUI.skin.button);
-            if (newHeat != heat) _city.Heatmap.Visible = newHeat;
-            if (GUI.Button(new Rect(_popupRect.xMax - 110f, y, 100f, 30f), "В меню")) _exitRequested = true;
-            y += 38f;
+            var heatRect = new Rect(carsRect.xMax + 6f, y, 116f, 32f);
+            if (DrawActionButton(heatRect, heat ? "НАГРУЗКА ✓" : "НАГРУЗКА", heat ? ShopColor : light, heat ? inkOn : ink, true))
+                _city.Heatmap.Visible = !heat;
+
+            var menuRect = new Rect(_popupRect.xMax - 10f - 92f, y, 92f, 32f);
+            if (DrawActionButton(menuRect, "В МЕНЮ", new Color32(0xF8, 0xE1, 0xDE, 0xFF), ink, true))
+                _exitRequested = true;
+            y += 40f;
 
             for (int i = 0; i < rows; i++)
             {
@@ -507,11 +573,11 @@ namespace CityGame.Buildings
                         CityGame.Sectors.BiomeSpecs.Title(_city.Biomes.BiomeAt(cellUnder)), trees.y, trees.x,
                         _city.Biomes.ForestBonusActive(sectorUnder) ? "да" : "нет",
                         _city.Traffic.Count, _city.Traffic.OnRoad, _city.Traffic.Stopped, _city.Traffic.FleetValue),
-                    _lblSmall);
+                    _lblDiag);
                 GUI.Label(new Rect(x, y + 20f, _popupRect.width - 20f, 16f),
                     string.Format("{0} | экран {1}x{2} | касание {3:0},{4:0} | мир {5:0.0},{6:0.0}",
                         CityGame.Roads.PointerInput.Source, Screen.width, Screen.height, p.x, p.y, wp.x, wp.y),
-                    _lblSmall);
+                    _lblDiag);
             }
 
             return _popupRect.y - 6f;
@@ -601,10 +667,9 @@ namespace CityGame.Buildings
         bool DrawActionButton(Rect r, string text, Color fill, Color textColor, bool enabled)
         {
             Draw(r, _panel, fill);
-            Color old = _lblAction.normal.textColor;
-            _lblAction.normal.textColor = textColor;
+            SetText(_lblAction, textColor);
             GUI.Label(r, text, _lblAction);
-            _lblAction.normal.textColor = old;
+            SetText(_lblAction, Color.black);
             bool wasEnabled = GUI.enabled;
             GUI.enabled = enabled;
             bool pressed = GUI.Button(r, GUIContent.none, GUIStyle.none);

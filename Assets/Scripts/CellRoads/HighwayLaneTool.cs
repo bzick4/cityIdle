@@ -107,20 +107,15 @@ namespace CityGame.CellRoads
                 if (!Allowed(start))
                 {
                     Message?.Invoke(OneWayMode
-                        ? "Односторонняя дорога строится на свободных клетках и соединяется с шоссе"
+                        ? "Односторонняя дорога строится на свободных клетках и может пересекать обычные дороги и шоссе"
                         : "Шоссе строится на свободных клетках или поверх обычной дороги");
                     return;
                 }
 
                 HighwayLane startLane = _map.LaneAt(start);
-                bool occupiedByOrdinaryRoad = _map.Has(start) && Side.Count(_map.Mask(start)) > 0 &&
-                    !startLane.Active;
-                if ((!OneWayMode && startLane.Active) ||
-                    (OneWayMode && (startLane.OneWay || occupiedByOrdinaryRoad)))
+                if ((!OneWayMode && startLane.Active) || (OneWayMode && startLane.OneWay))
                 {
-                    Message?.Invoke(OneWayMode
-                        ? "Одностороннюю дорогу нельзя прокладывать поверх обычной дороги"
-                        : "Здесь уже есть шоссе или односторонняя дорога");
+                    Message?.Invoke("Здесь уже есть шоссе или односторонняя дорога");
                     return;
                 }
 
@@ -173,20 +168,41 @@ namespace CityGame.CellRoads
                     ? new Vector2Int(along > 0 ? 1 : -1, 0)
                     : new Vector2Int(0, along > 0 ? 1 : -1);
                 Vector2Int next = tail + step;
-                int side = Side.FromDelta(next - tail);
-                if (!Allowed(next) || _path.Contains(next)) return;
-                HighwayLane nextLane = _map.LaneAt(next);
-                if (!OneWayMode && nextLane.Active) return;
-                if (OneWayMode)
+                if (!CanStep(tail, next))
                 {
-                    // Обычная односторонняя дорога не накладывается на уже занятую дорогу.
-                    // Шоссе можно соединить или пересечь им для последующей установки моста.
-                    if (nextLane.Active && nextLane.OneWay) return;
-                    if (_map.Has(next) && Side.Count(_map.Mask(next)) > 0 && !nextLane.Active) return;
+                    // Упёрлись: пробуем обойти препятствие шагом в другую сторону к цели,
+                    // иначе дорога замирала бы на первой же занятой клетке.
+                    int acrossSign = across > 0 ? 1 : -1;
+                    Vector2Int alt = _horizontal ? new Vector2Int(0, acrossSign) : new Vector2Int(acrossSign, 0);
+                    if (across == 0 || !CanStep(tail, tail + alt)) return;
+                    _horizontal = !_horizontal;
+                    next = tail + alt;
                 }
+
                 _path.Add(next);
                 UpdatePreview();
             }
+        }
+
+        /// <summary>
+        /// Можно ли продлить маршрут с клетки from на соседнюю to.
+        /// Односторонняя дорога может пересекать обычную дорогу (перекрёсток) и примыкать к ней,
+        /// но не идёт вдоль неё и не накладывается на шоссе или другую одностороннюю.
+        /// </summary>
+        bool CanStep(Vector2Int from, Vector2Int to)
+        {
+            if (!Allowed(to) || _path.Contains(to)) return false;
+            HighwayLane lane = _map.LaneAt(to);
+            if (!OneWayMode) return !lane.Active;
+            if (lane.Active && lane.OneWay) return false;
+
+            int side = Side.FromDelta(to - from);
+            if (side == 0) return false;
+            if (lane.Active) return true; // шоссе: проверки направления делает SetOneWayPath
+            int mask = _map.Mask(to);
+            if (mask == 0) return true;
+            // Обычная дорога: клетка не должна быть уже соединена с нашей стороны, то есть не вдоль дороги.
+            return (mask & Side.Opposite(side)) == 0;
         }
 
         void Commit()
@@ -201,7 +217,8 @@ namespace CityGame.CellRoads
             {
                 float factor = CostFactorAt != null ? CostFactorAt(cell) : 1f;
                 HighwayLane lane = _map.LaneAt(cell);
-                bool highwayConnection = OneWayMode && lane.Active && !lane.OneWay;
+                bool highwayConnection = OneWayMode &&
+                    ((lane.Active && !lane.OneWay) || (!lane.Active && _map.Mask(cell) != 0));
                 float cost = highwayConnection ? 0f : unitCost * factor;
                 if (_economy != null && _economy.Money < total + cost) break;
                 accepted.Add(cell);
@@ -211,7 +228,9 @@ namespace CityGame.CellRoads
                 ? _map.SetOneWayPath(accepted)
                 : _map.SetHighwayPath(accepted, true));
             if (ok && total > 0f && _economy != null) _economy.TrySpend(total);
-            Message?.Invoke(!ok ? "Нужно провести маршрут минимум через две клетки" :
+            Message?.Invoke(!ok ? (accepted.Count >= 2 && OneWayMode
+                    ? "Обычную дорогу можно пересекать только прямо, а вдоль неё идти нельзя"
+                    : "Нужно провести маршрут минимум через две клетки") :
                 OneWayMode ? "Односторонняя дорога построена" : "Шоссе построено · встречную полосу проложи рядом обратным ходом");
             _path.Clear();
             if (_preview != null) _preview.enabled = false;
