@@ -35,6 +35,8 @@ namespace CityGame.Buildings
         public float CellSize = 1f;
         [Tooltip("Расстояние от центра сектора до угла")]
         public float HexSize = 5f;
+        [Tooltip("Доля ширины соседних секторов, видимая по краям при старте новой карты")]
+        [Range(0f, 0.5f)] public float InitialNeighborVisibleFraction = 0.3f;
 
         public CityModel Model { get; private set; }
         public Economy Economy { get; private set; }
@@ -68,6 +70,7 @@ namespace CityGame.Buildings
         MainMenu _menu;
         CellRoadGraphSync _graphSync;
         BiomeMap _biomeMap;
+        SectorRenderer _sectorRenderer;
         readonly List<Component> _added = new List<Component>();
         int _baseChildren;
         float _saveTimer;
@@ -97,7 +100,13 @@ namespace CityGame.Buildings
 
         void CloseMenu()
         {
-            if (_menu != null) Destroy(_menu);
+            if (_menu != null)
+            {
+                // Destroy выполняется в конце кадра. Сначала отключаем фон, чтобы его Update
+                // не перезаписал позицию камеры сразу после установки стартового вида города.
+                _menu.StopBackdrop();
+                Destroy(_menu);
+            }
             _menu = null;
         }
 
@@ -257,6 +266,7 @@ namespace CityGame.Buildings
 
             Sectors = new SectorMap(HexSize);
             _biomeMap = new BiomeMap { Seed = seed };
+            if (data == null) Sectors.OpenRandomStartingNeighbors(seed, 2);
             Biomes = new Biomes(_biomeMap, Sectors, Model, RoadMap, CellSize);
 
             Coverage = new ServiceCoverage(Model);
@@ -271,16 +281,16 @@ namespace CityGame.Buildings
             roadRenderer.CellSize = CellSize;
             roadRenderer.Bind(RoadMap);
 
-            var sectorRenderer = GetOrAdd<SectorRenderer>();
-            sectorRenderer.CellSize = CellSize;
-            sectorRenderer.Bind(Sectors, Biomes.Map);
+            _sectorRenderer = GetOrAdd<SectorRenderer>();
+            _sectorRenderer.CellSize = CellSize;
+            _sectorRenderer.Bind(Sectors, Biomes.Map);
             var trees = GetOrAdd<TreeRenderer>();
             trees.CellSize = CellSize;
-            trees.Drops = sectorRenderer;
-            sectorRenderer.DropFinished += trees.Redraw;
+            trees.Drops = _sectorRenderer;
+            _sectorRenderer.DropFinished += trees.Redraw;
             trees.Bind(Biomes, Sectors);
             Tapper = GetOrAdd<SectorTapper>();
-            Tapper.Bind(Sectors, sectorRenderer);
+            Tapper.Bind(Sectors, _sectorRenderer);
 
             Placer = GetOrAdd<BuildingPlacer>();
             Placer.CellSize = CellSize;
@@ -310,7 +320,7 @@ namespace CityGame.Buildings
             // Здания рисуем после потоков: свечение района зависит от довольства.
             var cityRenderer = GetOrAdd<CityRenderer>();
             cityRenderer.CellSize = CellSize;
-            cityRenderer.Bind(Model, Flow);
+            cityRenderer.Bind(Model, Flow, Biomes);
 
             Traffic = GetOrAdd<CarSystem>();
             Traffic.CellSize = CellSize;
@@ -334,6 +344,7 @@ namespace CityGame.Buildings
 
             Started = true;
             if (data != null) Apply(data);
+            else Rig.SetStartView(Vector2.zero, HexSize, InitialNeighborVisibleFraction);
 
             // Старт без инструмента: палец двигает карту. Повторный тап по активному инструменту возвращает сюда.
             Select(Tool.Pan);
@@ -358,6 +369,7 @@ namespace CityGame.Buildings
         {
             CurrentTool = tool;
             bool build = tool >= Tool.Residential && tool <= Tool.Erase;
+            if (_sectorRenderer != null) _sectorRenderer.SetGridVisible(tool != Tool.Pan);
 
             RoadDrawer.enabled = tool == Tool.Road;
             HighwayTool.enabled = tool == Tool.Highway || tool == Tool.OneWay;

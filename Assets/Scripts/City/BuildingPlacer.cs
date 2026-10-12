@@ -34,6 +34,9 @@ namespace CityGame.Buildings
         CellRoadMap _roads;
         bool _painting;
 
+        /// <summary>Здание, ожидающее подтверждения удаления.</summary>
+        public Vector2Int? PendingEraseCell { get; private set; }
+
         public void Bind(CityModel model, Economy economy, CellRoadMap roads, Biomes biomes = null)
         {
             _biomes = biomes;
@@ -66,6 +69,19 @@ namespace CityGame.Buildings
         void OnDisable()
         {
             _painting = false;
+        }
+
+        public void ConfirmEraseBuilding()
+        {
+            if (!PendingEraseCell.HasValue) return;
+            Vector2Int cell = PendingEraseCell.Value;
+            PendingEraseCell = null;
+            _model?.Remove(cell);
+        }
+
+        public void CancelEraseBuilding()
+        {
+            PendingEraseCell = null;
         }
 
         void Update()
@@ -102,9 +118,14 @@ namespace CityGame.Buildings
         {
             if (EraseMode)
             {
-                _model.Remove(cell);
+                if (_model.Get(cell) != null)
+                {
+                    PendingEraseCell = cell;
+                    _painting = false;
+                    return;
+                }
                 if (_roads.Has(cell) && !_roads.Remove(cell))
-                    Message?.Invoke("Этот участок связан с шоссе и не может быть стёрт");
+                    Message?.Invoke("Не удалось удалить этот участок дороги");
                 return;
             }
 

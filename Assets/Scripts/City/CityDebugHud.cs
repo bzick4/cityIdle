@@ -39,6 +39,7 @@ namespace CityGame.Buildings
         Rect _dialogRect;
         Rect _junctionRect;
         Rect _highwayRect;
+        Rect _eraseRect;
 
         Texture2D _pillTex, _circleTex, _panelTex;
         GUIStyle _pill, _circle, _panel;
@@ -104,6 +105,7 @@ namespace CityGame.Buildings
         /// <summary>screen: пиксели экрана, начало внизу слева.</summary>
         public bool IsPointerBlocked(Vector2 screen)
         {
+            if (_city != null && _city.Placer != null && _city.Placer.PendingEraseCell.HasValue) return true;
             var gui = new Vector2(screen.x, Screen.height - screen.y) / Scale;
             return _barRect.Contains(gui) || _popupRect.Contains(gui) ||
                    (_city != null && _city.Tutorial != null && _city.Tutorial.Contains(screen)) ||
@@ -302,6 +304,10 @@ namespace CityGame.Buildings
             }
             else _dialogRect = Rect.zero;
 
+            if (_city.Placer.PendingEraseCell.HasValue)
+                DrawEraseDialog(w, h);
+            else _eraseRect = Rect.zero;
+
             // Подсказка над всеми панелями.
             if (Time.unscaledTime < _toastUntil)
             {
@@ -310,6 +316,41 @@ namespace CityGame.Buildings
                 GUI.Label(r, _toast, _lblCenter);
             }
 
+        }
+
+        void DrawEraseDialog(float w, float h)
+        {
+            Vector2Int cell = _city.Placer.PendingEraseCell.Value;
+            BuildingCell building = _city.Model.Get(cell);
+            if (building == null) { _city.Placer.CancelEraseBuilding(); _eraseRect = Rect.zero; return; }
+
+            GUI.color = new Color(0.10f, 0.13f, 0.16f, 0.56f);
+            GUI.DrawTexture(new Rect(0f, 0f, w, h), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            float panelW = Mathf.Min(340f, w - 28f);
+            const float panelH = 182f;
+            _eraseRect = new Rect((w - panelW) * 0.5f, (h - panelH) * 0.5f, panelW, panelH);
+            Draw(_eraseRect, _panel, PanelColor);
+            GUI.Label(new Rect(_eraseRect.x + 18f, _eraseRect.y + 14f, panelW - 36f, 28f), "СНЕСТИ ЗДАНИЕ?", _lblMenuTitle);
+
+            string name = building.Category == BuildingCategory.Service
+                ? ServiceSpecs.Title(building.Kind)
+                : CategorySpecs.Title(building.Category);
+            GUI.Label(new Rect(_eraseRect.x + 18f, _eraseRect.y + 48f, panelW - 36f, 42f),
+                name + " · клетка " + cell.x + ", " + cell.y, _lblSmall);
+            GUI.Label(new Rect(_eraseRect.x + 18f, _eraseRect.y + 91f, panelW - 36f, 28f),
+                "Это действие нельзя отменить", _lblSmall);
+
+            const float gap = 8f;
+            float buttonY = _eraseRect.y + 132f;
+            float buttonW = (panelW - 36f - gap) * 0.5f;
+            var cancel = new Rect(_eraseRect.x + 18f, buttonY, buttonW, 38f);
+            var remove = new Rect(cancel.xMax + gap, buttonY, buttonW, 38f);
+            if (DrawActionButton(cancel, "ОСТАВИТЬ", new Color32(0xF7, 0xF7, 0xF4, 0xFF),
+                    new Color32(0x3B, 0x45, 0x52, 0xFF), true)) _city.Placer.CancelEraseBuilding();
+            if (DrawActionButton(remove, "УДАЛИТЬ", new Color32(0xE8, 0xA4, 0x9B, 0xFF),
+                    new Color32(0x3B, 0x45, 0x52, 0xFF), true)) _city.Placer.ConfirmEraseBuilding();
         }
 
         void DrawSectorDialog(float w, float top)
@@ -689,8 +730,8 @@ namespace CityGame.Buildings
             _highwayRect = new Rect(8f, top - panelH, w - 16f, panelH);
             Draw(_highwayRect, _panel, PanelColor);
             string hint = _city.CurrentTool == Tool.OneWay
-                ? "Строй обычную одностороннюю дорогу на свободных клетках. Её можно соединять и пересекать с шоссе, затем ставить мост."
-                : "Строй отдельное шоссе на свободных клетках или поверх обычной дороги. Встречное направление — отдельным штрихом.";
+                ? "Одностороннюю можно продолжить с конца, соединить с шоссе или пересечь им. Мосты доступны в развилках."
+                : "Продолжай шоссе с его конца. Новые полосы строй по клеткам; встречное направление — отдельным штрихом.";
             GUI.Label(new Rect(_highwayRect.x + 10f, _highwayRect.y + 4f, _highwayRect.width - 20f, panelH - 8f), hint, _lblSmall);
             return _highwayRect.y - 6f;
         }

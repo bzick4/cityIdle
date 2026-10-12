@@ -34,7 +34,7 @@ namespace CityGame.Sectors
 
         void OnDisable()
         {
-            if (_renderer != null) _renderer.SetPending(null);
+            if (_renderer != null) _renderer.ClearPending();
         }
 
         public void ConfirmPending()

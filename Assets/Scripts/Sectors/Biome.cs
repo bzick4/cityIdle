@@ -88,8 +88,8 @@ namespace CityGame.Sectors
     }
 
     /// <summary>
-    /// Биом каждого сектора. Считается по шуму из координат сектора, поэтому один и тот же при любом порядке открытия,
-    /// соседние сектора часто одного биома. Сектор в радиусе 1 от старта всегда стандартный.
+    /// Биом каждого сектора. Считается по шуму из координат сектора и seed карты,
+    /// поэтому один и тот же при любом порядке открытия; стартовый биом тоже может быть любым.
     /// </summary>
     public sealed class BiomeMap
     {
@@ -97,9 +97,6 @@ namespace CityGame.Sectors
 
         public Biome BiomeOf(HexCoord h)
         {
-            int dist = (Mathf.Abs(h.Q) + Mathf.Abs(h.R) + Mathf.Abs(h.Q + h.R)) / 2;
-            if (dist <= 1) return Biome.Standard;
-
             float x = h.Q + h.R * 0.5f;
             float y = h.R * 0.866f;
             float height = Noise(x * 0.45f, y * 0.45f, Seed);

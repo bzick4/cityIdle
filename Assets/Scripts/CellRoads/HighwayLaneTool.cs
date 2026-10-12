@@ -9,12 +9,14 @@ namespace CityGame.CellRoads
 {
     /// <summary>
     /// Строит отдельное шоссе или обычную одностороннюю дорогу по сетке.
-    /// Шоссе можно класть поверх обычной дороги; односторонняя дорога строится на свободных клетках.
+    /// Оба типа можно продолжать от своего свободного конца; шоссе также кладётся поверх обычной дороги.
     /// </summary>
     public sealed class HighwayLaneTool : MonoBehaviour
     {
         public Camera Cam;
         public float CellSize = 1f;
+        [Tooltip("Смещение пальца в сторону для поворота маршрута, в клетках")]
+        public int TurnThreshold = 2;
         public bool OneWayMode;
         public Func<Vector2, bool> IsPointerBlocked;
         public event Action<string> Message;
@@ -50,9 +52,11 @@ namespace CityGame.CellRoads
         void Awake()
         {
             if (Cam == null) Cam = Camera.main;
+            Color previewColor = RoadSpecs.BodyColor(RoadType.Local);
+            previewColor.a = 0.6f;
             _previewMaterial = new Material(Shader.Find("Sprites/Default"))
             {
-                color = new Color32(0xF2, 0xB8, 0x4B, 0xD8)
+                color = previewColor
             };
             var go = new GameObject("Highway direction preview");
             go.transform.SetParent(transform, false);
@@ -113,9 +117,12 @@ namespace CityGame.CellRoads
                 }
 
                 HighwayLane startLane = _map.LaneAt(start);
-                if ((!OneWayMode && startLane.Active) || (OneWayMode && startLane.OneWay))
+                bool canExtendCurrentType = startLane.Active && startLane.OneWay == OneWayMode &&
+                                            Side.Count(_map.Mask(start)) == 1;
+                bool oneWayCanJoinHighway = OneWayMode && startLane.Active && !startLane.OneWay;
+                if (startLane.Active && !canExtendCurrentType && !oneWayCanJoinHighway)
                 {
-                    Message?.Invoke("Здесь уже есть шоссе или односторонняя дорога");
+                    Message?.Invoke("Здесь уже проходит другой тип дороги");
                     return;
                 }
 
@@ -155,9 +162,9 @@ namespace CityGame.CellRoads
 
                 int along = _horizontal ? delta.x : delta.y;
                 int across = _horizontal ? delta.y : delta.x;
-                bool turn = across != 0 && (along == 0 ||
-                    (Mathf.Abs(across) > Mathf.Abs(along) && Mathf.Abs(across) >= 1));
-                if (turn)
+                // Не меняем ось, пока не дошли до цели по текущему направлению.
+                // Иначе при диагональном движении палец заставляет маршрут метаться между осями.
+                if (along == 0 && Mathf.Abs(across) >= Mathf.Max(1, TurnThreshold))
                 {
                     _horizontal = !_horizontal;
                     along = _horizontal ? delta.x : delta.y;
@@ -168,16 +175,7 @@ namespace CityGame.CellRoads
                     ? new Vector2Int(along > 0 ? 1 : -1, 0)
                     : new Vector2Int(0, along > 0 ? 1 : -1);
                 Vector2Int next = tail + step;
-                if (!CanStep(tail, next))
-                {
-                    // Упёрлись: пробуем обойти препятствие шагом в другую сторону к цели,
-                    // иначе дорога замирала бы на первой же занятой клетке.
-                    int acrossSign = across > 0 ? 1 : -1;
-                    Vector2Int alt = _horizontal ? new Vector2Int(0, acrossSign) : new Vector2Int(acrossSign, 0);
-                    if (across == 0 || !CanStep(tail, tail + alt)) return;
-                    _horizontal = !_horizontal;
-                    next = tail + alt;
-                }
+                if (!CanStep(tail, next)) return;
 
                 _path.Add(next);
                 UpdatePreview();
@@ -193,11 +191,29 @@ namespace CityGame.CellRoads
         {
             if (!Allowed(to) || _path.Contains(to)) return false;
             HighwayLane lane = _map.LaneAt(to);
-            if (!OneWayMode) return !lane.Active;
-            if (lane.Active && lane.OneWay) return false;
-
             int side = Side.FromDelta(to - from);
             if (side == 0) return false;
+            if (_path.Count == 1)
+            {
+                HighwayLane startLane = _map.LaneAt(from);
+                if (startLane.Active && startLane.OneWay == OneWayMode && Side.Count(_map.Mask(from)) == 1)
+                {
+                    // С любого свободного конца можно повернуть в любую сторону,
+                    // кроме клетки, которая уже является его продолжением.
+                    if ((_map.Mask(from) & side) != 0) return false;
+                }
+            }
+            HighwayLane fromLane = _map.LaneAt(from);
+            if (_path.Count > 1 && fromLane.Active && fromLane.OneWay == OneWayMode &&
+                Side.Count(_map.Mask(from)) == 1) return false; // существующий конец — только точка соединения
+            if (!OneWayMode)
+            {
+                if (!lane.Active) return true;
+                return !lane.OneWay && Side.Count(_map.Mask(to)) == 1 &&
+                       (_map.Mask(to) & Side.Opposite(side)) == 0;
+            }
+            if (lane.Active && lane.OneWay)
+                return Side.Count(_map.Mask(to)) == 1 && (_map.Mask(to) & Side.Opposite(side)) == 0;
             if (lane.Active) return true; // шоссе: проверки направления делает SetOneWayPath
             int mask = _map.Mask(to);
             if (mask == 0) return true;
@@ -217,9 +233,10 @@ namespace CityGame.CellRoads
             {
                 float factor = CostFactorAt != null ? CostFactorAt(cell) : 1f;
                 HighwayLane lane = _map.LaneAt(cell);
+                bool existingLane = lane.Active && lane.OneWay == OneWayMode;
                 bool highwayConnection = OneWayMode &&
                     ((lane.Active && !lane.OneWay) || (!lane.Active && _map.Mask(cell) != 0));
-                float cost = highwayConnection ? 0f : unitCost * factor;
+                float cost = existingLane || highwayConnection ? 0f : unitCost * factor;
                 if (_economy != null && _economy.Money < total + cost) break;
                 accepted.Add(cell);
                 total += cost;
@@ -228,9 +245,11 @@ namespace CityGame.CellRoads
                 ? _map.SetOneWayPath(accepted)
                 : _map.SetHighwayPath(accepted, true));
             if (ok && total > 0f && _economy != null) _economy.TrySpend(total);
-            Message?.Invoke(!ok ? (accepted.Count >= 2 && OneWayMode
-                    ? "Обычную дорогу можно пересекать только прямо, а вдоль неё идти нельзя"
-                    : "Нужно провести маршрут минимум через две клетки") :
+            Message?.Invoke(!ok ? (accepted.Count < 2
+                    ? "Нужно провести маршрут минимум через две клетки"
+                    : OneWayMode
+                        ? "Продлевай дорогу от её конца; шоссе можно пересекать только прямо"
+                        : "Продлевай шоссе от его конца и по направлению полосы") :
                 OneWayMode ? "Односторонняя дорога построена" : "Шоссе построено · встречную полосу проложи рядом обратным ходом");
             _path.Clear();
             if (_preview != null) _preview.enabled = false;

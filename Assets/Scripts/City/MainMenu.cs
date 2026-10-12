@@ -40,11 +40,20 @@ namespace CityGame.Buildings
             _backdrop = MenuBackdrop.Create(city.CellSize, city.HexSize);
         }
 
+        /// <summary>Останавливает анимацию камеры меню до того, как игра выставит свой вид.</summary>
+        public void StopBackdrop()
+        {
+            if (_backdrop == null) return;
+            _backdrop.enabled = false;
+            Destroy(_backdrop.gameObject);
+            _backdrop = null;
+        }
+
         void OnDestroy()
         {
             foreach (Texture2D t in _textures)
                 if (t != null) Destroy(t);
-            if (_backdrop != null) Destroy(_backdrop.gameObject);
+            StopBackdrop();
         }
 
         Texture2D Track(Texture2D t)

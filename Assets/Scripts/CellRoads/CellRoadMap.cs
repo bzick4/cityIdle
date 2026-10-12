@@ -241,14 +241,49 @@ namespace CityGame.CellRoads
             return _masks.TryGetValue(cell, out int mask) && (mask & connected) != 0;
         }
 
+        static int EndpointRouteSign(HighwayLane lane, int mask)
+        {
+            if (!lane.Active || Side.Count(mask) != 1) return 0;
+            // Если единственная связь указывает по направлению движения, это начало полосы;
+            // если против направления — её конец.
+            return (mask & lane.Heading) != 0 ? -1 : 1;
+        }
+
         /// <summary>Строит отдельное полотно шоссе на пустых клетках или поверх обычной дороги.</summary>
         public bool SetHighwayPath(IReadOnlyList<Vector2Int> path, bool standalone = true)
         {
             if (path == null || path.Count < 2) return false;
             LockExistingHighways();
+
+            HighwayLane first = LaneAt(path[0]);
+            HighwayLane last = LaneAt(path[path.Count - 1]);
+            bool extendFromFirst = first.Active && !first.OneWay;
+            bool extendFromLast = last.Active && !last.OneWay;
+            if ((first.Active && !extendFromFirst) || (last.Active && !extendFromLast)) return false;
+            int routeSign = 0;
+            if (extendFromFirst)
+            {
+                int mask = Mask(path[0]);
+                int firstSign = EndpointRouteSign(first, mask);
+                int firstStep = Side.FromDelta(path[1] - path[0]);
+                if (firstSign == 0 || firstStep == 0 || (mask & firstStep) != 0) return false;
+                routeSign = firstSign;
+            }
+            if (extendFromLast)
+            {
+                int mask = Mask(path[path.Count - 1]);
+                int lastSign = EndpointRouteSign(last, mask);
+                int lastConnectionSide = Side.FromDelta(path[path.Count - 2] - path[path.Count - 1]);
+                if (lastSign == 0 || lastConnectionSide == 0 || (mask & lastConnectionSide) != 0) return false;
+                if (routeSign != 0 && routeSign != lastSign) return false;
+                routeSign = lastSign;
+            }
+
             for (int i = 0; i < path.Count; i++)
             {
-                if (LaneAt(path[i]).Active) return false;
+                HighwayLane lane = LaneAt(path[i]);
+                bool endpoint = (i == 0 && extendFromFirst) || (i == path.Count - 1 && extendFromLast);
+                if (lane.Active && !endpoint) return false;
                 if (i + 1 < path.Count)
                 {
                     int dir = Side.FromDelta(path[i + 1] - path[i]);
@@ -283,9 +318,10 @@ namespace CityGame.CellRoads
 
             for (int i = 0; i < path.Count; i++)
             {
-                int heading;
-                if (i + 1 < path.Count) heading = Side.FromDelta(path[i + 1] - path[i]);
-                else heading = Side.FromDelta(path[i] - path[i - 1]);
+                int pathDirection = i + 1 < path.Count
+                    ? Side.FromDelta(path[i + 1] - path[i])
+                    : Side.FromDelta(path[i] - path[i - 1]);
+                int heading = routeSign < 0 ? Side.Opposite(pathDirection) : pathDirection;
                 _highwayDirections[path[i]] = heading;
                 _rampCells.Remove(path[i]);
             }
@@ -294,8 +330,8 @@ namespace CityGame.CellRoads
         }
 
         /// <summary>
-        /// Строит одностороннюю дорогу обычной ширины на пустых клетках. Она может
-        /// соединяться с шоссе и пересекать его; геометрия и направление шоссе сохраняются.
+        /// Строит одностороннюю дорогу обычной ширины. Её можно продолжить от свободного конца,
+        /// соединить с шоссе или пересечь его; существующее направление полос сохраняется.
         /// </summary>
         public bool SetOneWayPath(IReadOnlyList<Vector2Int> path)
         {
@@ -303,15 +339,43 @@ namespace CityGame.CellRoads
             LockExistingHighways();
 
             bool hasRoadCell = false;
-            var highwayEndpoints = new bool[path.Count]; // клетки, чьё направление не перезаписываем (шоссе и обычная дорога)
+            var preserveDirection = new bool[path.Count]; // быстрые шоссе и обычные дороги сохраняют своё направление
+            int routeSign = 0;
+            HighwayLane firstLane = LaneAt(path[0]);
+            HighwayLane lastLane = LaneAt(path[path.Count - 1]);
+            bool extendFromFirst = firstLane.Active && firstLane.OneWay;
+            bool extendFromLast = lastLane.Active && lastLane.OneWay;
+            if (extendFromFirst)
+            {
+                int mask = Mask(path[0]);
+                int firstSign = EndpointRouteSign(firstLane, mask);
+                int firstStep = Side.FromDelta(path[1] - path[0]);
+                if (firstSign == 0 || firstStep == 0 || (mask & firstStep) != 0) return false;
+                routeSign = firstSign;
+            }
+            if (extendFromLast)
+            {
+                int mask = Mask(path[path.Count - 1]);
+                int lastSign = EndpointRouteSign(lastLane, mask);
+                int lastConnectionSide = Side.FromDelta(path[path.Count - 2] - path[path.Count - 1]);
+                if (lastSign == 0 || lastConnectionSide == 0 || (mask & lastConnectionSide) != 0) return false;
+                if (routeSign != 0 && routeSign != lastSign) return false;
+                routeSign = lastSign;
+            }
+
             for (int i = 0; i < path.Count; i++)
             {
                 if (i + 1 < path.Count && Side.FromDelta(path[i + 1] - path[i]) == 0)
                     return false;
                 HighwayLane lane = LaneAt(path[i]);
                 bool highway = lane.Active && !lane.OneWay;
-                highwayEndpoints[i] = highway;
-                if (lane.Active && !highway) return false;
+                preserveDirection[i] = highway;
+                if (lane.Active && lane.OneWay)
+                {
+                    if (i != 0 && i != path.Count - 1) return false;
+                    if (Side.Count(Mask(path[i])) != 1) return false;
+                    continue;
+                }
                 if (highway && i > 0 && i + 1 < path.Count)
                 {
                     int incoming = Side.FromDelta(path[i] - path[i - 1]);
@@ -331,7 +395,7 @@ namespace CityGame.CellRoads
                     if (inSide != 0) mine |= Side.Opposite(inSide);
                     if (outSide != 0) mine |= outSide;
                     if ((existingMask & mine) != 0) return false; // уже соединено: идём вдоль дороги
-                    highwayEndpoints[i] = true;               // клетка остаётся обычной, направление не трогаем
+                    preserveDirection[i] = true;              // клетка остаётся обычной, направление не трогаем
                     continue;
                 }
 
@@ -354,10 +418,11 @@ namespace CityGame.CellRoads
 
             for (int i = 0; i < path.Count; i++)
             {
-                if (highwayEndpoints[i]) continue; // не перезаписываем направление шоссе
-                int heading = i + 1 < path.Count
+                if (preserveDirection[i]) continue; // не перезаписываем направление шоссе или обычной дороги
+                int pathDirection = i + 1 < path.Count
                     ? Side.FromDelta(path[i + 1] - path[i])
                     : Side.FromDelta(path[i] - path[i - 1]);
+                int heading = routeSign < 0 ? Side.Opposite(pathDirection) : pathDirection;
                 _highwayDirections[path[i]] = heading;
                 _rampCells.Add(path[i]);
             }
@@ -438,7 +503,7 @@ namespace CityGame.CellRoads
             {
                 Vector2Int approachCell = cell + Side.Vec(side);
                 HighwayLane lane = LaneAt(approachCell);
-                if (lane.Active && !lane.OneWay) return true;
+                if (lane.Active) return true;
             }
             return false;
         }
@@ -446,13 +511,13 @@ namespace CityGame.CellRoads
         bool HasHighwayApproach(Vector2Int cell)
         {
             HighwayLane own = LaneAt(cell);
-            if (own.Active && !own.OneWay) return true;
+            if (own.Active) return true;
             int mask = Mask(cell);
             foreach (int side in Side.All)
             {
                 if ((mask & side) == 0) continue;
                 HighwayLane approach = LaneAt(cell + Side.Vec(side));
-                if (approach.Active && !approach.OneWay) return true;
+                if (approach.Active) return true;
             }
             return false;
         }
@@ -610,23 +675,17 @@ namespace CityGame.CellRoads
         {
             LockExistingHighways();
             if (!_masks.TryGetValue(cell, out int mask)) return false;
-            HighwayLane currentLane = LaneAt(cell);
-            if (currentLane.Active && !currentLane.OneWay) return false;
-
-            // Не позволяем удалить соседнюю клетку, если этим разорвётся уже размеченное шоссе.
-            foreach (int side in Side.All)
-            {
-                Vector2Int neighbor = cell + Side.Vec(side);
-                HighwayLane adjacent = LaneAt(neighbor);
-                int edgeFromNeighbor = Side.Opposite(side);
-                if (adjacent.Active && !adjacent.OneWay && (Mask(neighbor) & edgeFromNeighbor) != 0 &&
-                    (adjacent.Heading == edgeFromNeighbor ||
-                     Side.Opposite(adjacent.Heading) == edgeFromNeighbor)) return false;
-            }
+            // Если шоссе было проложено поверх обычной дороги, стираем только полотно
+            // шоссе и возвращаем исходные связи обычной дороги на этой клетке.
+            int originalMask = 0;
+            bool overlay = _standaloneHighwayCells.Contains(cell) &&
+                           _standaloneOriginalMasks.TryGetValue(cell, out originalMask);
+            int restoredMask = overlay ? originalMask : 0;
+            int disconnectMask = mask & ~restoredMask;
 
             foreach (int side in Side.All)
             {
-                if ((mask & side) == 0) continue;
+                if ((disconnectMask & side) == 0) continue;
                 Vector2Int n = cell + Side.Vec(side);
                 if (_masks.TryGetValue(n, out int nm))
                 {
@@ -643,8 +702,16 @@ namespace CityGame.CellRoads
                 }
             }
 
-            _masks.Remove(cell);
-            _types.Remove(cell);
+            if (overlay && restoredMask != 0)
+                _masks[cell] = restoredMask;
+            else
+            {
+                _masks.Remove(cell);
+                _types.Remove(cell);
+            }
+
+            if (_types.TryGetValue(cell, out JunctionType type) && !IsValid(cell, type))
+                _types.Remove(cell);
             _highwayDirections.Remove(cell);
             _rampCells.Remove(cell);
             _standaloneHighwayCells.Remove(cell);

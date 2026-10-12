@@ -27,6 +27,25 @@ namespace CityGame.Sectors
             Add(new HexCoord(0, 0));
         }
 
+        /// <summary>Открывает случайные соседние стартовому сектору области. Выбор повторяется при том же seed.</summary>
+        public void OpenRandomStartingNeighbors(int seed, int count)
+        {
+            var directions = new List<int> { 0, 1, 2, 3, 4, 5 };
+            var random = new System.Random(seed);
+            for (int i = directions.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                int temp = directions[i];
+                directions[i] = directions[j];
+                directions[j] = temp;
+            }
+
+            int openCount = Mathf.Clamp(count, 0, directions.Count);
+            HexCoord start = new HexCoord(0, 0);
+            for (int i = 0; i < openCount; i++) Add(start.Neighbor(directions[i]));
+            if (openCount > 0) Changed?.Invoke();
+        }
+
         public HexCoord SectorAt(Vector2 world)
         {
             return HexMath.FromWorld(world, HexSize);

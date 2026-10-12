@@ -22,16 +22,20 @@ namespace CityGame.Sectors
         [Range(0.01f, 0.1f)] public float GridLine = 0.04f;
 
         [Header("Анимация открытия сектора (подкручивай здесь или в инспекторе)")]
-        [Tooltip("Сколько секунд сектор опускается на место")]
+        [Tooltip("Сколько секунд сектор уменьшается до размера карты")]
         public float DropDuration = 1.1f;
-        [Tooltip("Высота, с которой он начинает падать, в размерах сектора (0.5 = полсектора вверх)")]
-        public float DropHeight = 0.5f;
-        [Tooltip("Мягкий «подскок» при приземлении. 0 = без подскока, 1 = заметная пружина")]
-        [Range(0f, 1f)] public float DropSoftness = 0.25f;
-        [Tooltip("Начальный масштаб плитки. 1 = без изменения размера, меньше = вырастает при падении")]
-        [Range(0.6f, 1f)] public float DropStartScale = 0.92f;
+        [Tooltip("Мягкость остановки масштаба. 0 = ровно, больше = лёгкий отскок")]
+        [Range(0f, 0.5f)] public float DropSoftness = 0.08f;
+        [Tooltip("Начальный масштаб: сектор появляется увеличенным и сжимается до размера клетки")]
+        [Range(1f, 1.8f)] public float DropStartScale = 1.48f;
         [Tooltip("Какую часть времени сектор проявляется из прозрачности. 0.5 = за первую половину падения")]
         [Range(0.05f, 1f)] public float DropFadeShare = 0.5f;
+        [Tooltip("Длительность волны по сетке после сжатия сектора")]
+        public float GridWaveDuration = 0.9f;
+        [Tooltip("Яркость тёплой подсветки, расходящейся по сетке от центра")]
+        [Range(0f, 1.5f)] public float GridWaveStrength = 0.95f;
+        [Tooltip("Ширина светящегося кольца волны в размерах клетки")]
+        [Range(0.2f, 1.5f)] public float GridWaveWidth = 0.8f;
 
         /// <summary>Сектора, которые сейчас падают. Остальные рендереры не рисуют их в общих мешах.</summary>
         public readonly HashSet<HexCoord> Dropping = new HashSet<HexCoord>();
@@ -46,6 +50,9 @@ namespace CityGame.Sectors
             public GameObject Root;
             public readonly List<Material> Mats = new List<Material>();
             public readonly List<Color> Base = new List<Color>();
+            public Mesh WaveMesh;
+            public float[] WaveDistances;
+            public float WaveMaxDistance;
         }
 
         readonly List<Drop> _drops = new List<Drop>();
@@ -57,22 +64,47 @@ namespace CityGame.Sectors
         readonly List<GameObject> _frontierViews = new List<GameObject>();
         readonly List<GameObject> _gridViews = new List<GameObject>();
         GameObject _pending;
+        bool _gridVisible;
 
         public HexCoord? Pending { get; private set; }
 
+        public void SetGridVisible(bool visible)
+        {
+            _gridVisible = visible;
+            foreach (GameObject view in _gridViews)
+                if (view != null) view.SetActive(visible);
+        }
+
         public void Bind(SectorMap map, BiomeMap biomes)
         {
-            if (_map != null) _map.Changed -= Redraw;
+            UnsubscribeMap();
             _map = map;
             _biomes = biomes;
-            _map.Changed += Redraw;
-            _material = new Material(Shader.Find("Sprites/Default"));
+            SubscribeMap();
+            if (_material == null) _material = new Material(Shader.Find("Sprites/Default"));
             Redraw();
+        }
+
+        void OnEnable() => SubscribeMap();
+
+        void OnDisable() => UnsubscribeMap();
+
+        void SubscribeMap()
+        {
+            if (_map == null) return;
+            _map.Changed -= Redraw;
+            _map.Changed += Redraw;
+        }
+
+        void UnsubscribeMap()
+        {
+            if (_map != null) _map.Changed -= Redraw;
         }
 
         void OnDestroy()
         {
-            if (_map != null) _map.Changed -= Redraw;
+            UnsubscribeMap();
+            if (_material != null) UnityEngine.Object.Destroy(_material);
         }
 
         /// <summary>Запускает падение сектора. Вызывается перед открытием в SectorMap.</summary>
@@ -91,17 +123,24 @@ namespace CityGame.Sectors
             for (int i = _drops.Count - 1; i >= 0; i--)
             {
                 Drop d = _drops[i];
-                float t = (Time.time - d.Start) / Mathf.Max(0.05f, DropDuration);
-                if (t >= 1f)
+                float elapsed = Time.time - d.Start;
+                float fallT = elapsed / Mathf.Max(0.05f, DropDuration);
+                if (fallT < 1f)
+                {
+                    ApplyDrop(d, fallT);
+                    continue;
+                }
+
+                ApplyDrop(d, 1f);
+                float waveT = (elapsed - DropDuration) / Mathf.Max(0.05f, GridWaveDuration);
+                ApplyGridWave(d, waveT);
+                if (waveT >= 1f)
                 {
                     Dropping.Remove(d.H);
                     DestroyDrop(d);
                     _drops.RemoveAt(i);
                     finished = true;
-                    continue;
                 }
-
-                ApplyDrop(d, t);
             }
 
             if (finished)
@@ -125,9 +164,8 @@ namespace CityGame.Sectors
             if (d.Root == null) return;
             float e = Ease(Mathf.Clamp01(t));
             Vector2 c = HexMath.ToWorld(d.H, _map.HexSize);
-            float lift = (1f - e) * DropHeight * _map.HexSize;
-            d.Root.transform.position = new Vector3(c.x, c.y + lift, 0f);
-            d.Root.transform.localScale = Vector3.one * Mathf.LerpUnclamped(DropStartScale, 1f, e);
+            d.Root.transform.position = new Vector3(c.x, c.y, 0f);
+            d.Root.transform.localScale = Vector3.one * Mathf.LerpUnclamped(Mathf.Max(1f, DropStartScale), 1f, e);
             float a = Mathf.Clamp01(t / Mathf.Max(0.05f, DropFadeShare));
             a = a * a * (3f - 2f * a);
             for (int i = 0; i < d.Mats.Count; i++)
@@ -136,6 +174,23 @@ namespace CityGame.Sectors
                 col.a *= a;
                 d.Mats[i].color = col;
             }
+        }
+
+        void ApplyGridWave(Drop d, float t)
+        {
+            if (d.WaveMesh == null || d.WaveDistances == null || GridWaveStrength <= 0f) return;
+            float radius = d.WaveMaxDistance * Mathf.Clamp01(t);
+            float width = Mathf.Max(0.08f, GridWaveWidth * CellSize);
+            var colors = new Color[d.WaveDistances.Length * 4];
+            for (int i = 0; i < d.WaveDistances.Length; i++)
+            {
+                float ring = Mathf.Clamp01(1f - Mathf.Abs(d.WaveDistances[i] - radius) / width);
+                ring = ring * ring * (3f - 2f * ring) * GridWaveStrength;
+                Color color = new Color(1f, 0.88f, 0.58f, ring);
+                int v = i * 4;
+                colors[v] = colors[v + 1] = colors[v + 2] = colors[v + 3] = color;
+            }
+            d.WaveMesh.colors = colors;
         }
 
         void DestroyDrop(Drop d)
@@ -149,16 +204,21 @@ namespace CityGame.Sectors
             d.Root = null;
             d.Mats.Clear();
             d.Base.Clear();
+            d.WaveMesh = null;
+            d.WaveDistances = null;
         }
 
         public void SetPending(HexCoord? h)
         {
             Pending = h;
-            Redraw();
+            if (isActiveAndEnabled && gameObject.activeInHierarchy) Redraw();
         }
+
+        public void ClearPending() => SetPending(null);
 
         void Redraw()
         {
+            if (!isActiveAndEnabled || !gameObject.activeInHierarchy || _map == null || _biomes == null) return;
             DestroyAll(_openViews);
             DestroyAll(_frontierViews);
             DestroyAll(_gridViews);
@@ -190,7 +250,12 @@ namespace CityGame.Sectors
                 Add(_openViews, Make("Open " + b, open[i], ground, -30));
                 Add(_frontierViews, Make("Closed " + b, frontier[i], Color.Lerp(FrontierColor, ground, ClosedHint), -30));
                 Color grid = Color.Lerp(ground, Color.black, 0.07f);
-                Add(_gridViews, MakeGrid(open[i], grid));
+                GameObject gridView = MakeGrid(open[i], grid);
+                if (gridView != null)
+                {
+                    gridView.SetActive(_gridVisible);
+                    _gridViews.Add(gridView);
+                }
             }
 
             _pending = Make("Pending sector", pendingList, PendingColor, -29);
@@ -215,6 +280,12 @@ namespace CityGame.Sectors
             if (grid != null) grid.GetComponent<MeshRenderer>().sortingOrder = -18;
             AddToDrop(d, ground);
             AddToDrop(d, grid);
+            GameObject wave = MakeGridWave(d, c);
+            if (wave != null)
+            {
+                d.WaveMesh = wave.GetComponent<MeshFilter>().sharedMesh;
+                AddToDrop(d, wave);
+            }
 
             if (_trees != null)
             {
@@ -232,6 +303,63 @@ namespace CityGame.Sectors
             }
 
             ApplyDrop(d, Mathf.Clamp01((Time.time - d.Start) / Mathf.Max(0.05f, DropDuration)));
+        }
+
+        GameObject MakeGridWave(Drop drop, Vector2 origin)
+        {
+            var verts = new List<Vector3>();
+            var tris = new List<int>();
+            var distances = new List<float>();
+            float cs = CellSize;
+            // Шире основного шва, чтобы импульс читался как отдельная волна.
+            float t = GridLine * cs * 1.1f;
+            Vector2 center = HexMath.ToWorld(drop.H, _map.HexSize);
+            float rx = _map.HexSize * 0.8660254f + cs;
+            float ry = _map.HexSize + cs;
+            int x0 = Mathf.FloorToInt((center.x - rx) / cs);
+            int x1 = Mathf.CeilToInt((center.x + rx) / cs);
+            int y0 = Mathf.FloorToInt((center.y - ry) / cs);
+            int y1 = Mathf.CeilToInt((center.y + ry) / cs);
+
+            for (int ix = x0; ix <= x1; ix++)
+            for (int iy = y0; iy <= y1; iy++)
+            {
+                if (!InHex(ix, iy, drop.H)) continue;
+                float lx = ix * cs;
+                float by = iy * cs;
+                Vector2 o = origin;
+                WaveLine(verts, tris, distances, new Vector2(lx - t, by - t) - o, new Vector2(lx + t, by + cs + t) - o, center, o);
+                WaveLine(verts, tris, distances, new Vector2(lx - t, by - t) - o, new Vector2(lx + cs + t, by + t) - o, center, o);
+                if (!InHex(ix + 1, iy, drop.H))
+                    WaveLine(verts, tris, distances, new Vector2(lx + cs - t, by - t) - o, new Vector2(lx + cs + t, by + cs + t) - o, center, o);
+                if (!InHex(ix, iy + 1, drop.H))
+                    WaveLine(verts, tris, distances, new Vector2(lx - t, by + cs - t) - o, new Vector2(lx + cs + t, by + cs + t) - o, center, o);
+            }
+
+            if (verts.Count == 0) return null;
+            var mesh = new Mesh { name = "SectorGridWave" };
+            mesh.SetVertices(verts);
+            mesh.SetTriangles(tris, 0);
+            mesh.colors = new Color[verts.Count];
+            mesh.RecalculateBounds();
+            drop.WaveDistances = distances.ToArray();
+            foreach (float distance in drop.WaveDistances)
+                if (distance > drop.WaveMaxDistance) drop.WaveMaxDistance = distance;
+
+            var go = new GameObject("Grid wave");
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = new Material(_material) { color = Color.white };
+            renderer.sortingOrder = -17;
+            return go;
+        }
+
+        static void WaveLine(List<Vector3> verts, List<int> tris, List<float> distances,
+            Vector2 min, Vector2 max, Vector2 center, Vector2 origin)
+        {
+            Line(verts, tris, min, max);
+            Vector2 midpoint = (min + max) * 0.5f + origin;
+            distances.Add(Vector2.Distance(midpoint, center));
         }
 
         static void AddToDrop(Drop d, GameObject go)

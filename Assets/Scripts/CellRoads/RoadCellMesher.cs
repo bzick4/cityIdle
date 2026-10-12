@@ -109,10 +109,8 @@ namespace CityGame.CellRoads
                         bool bridgeVertical = type == JunctionType.OverpassVertical;
                         HighwayLane bridgeLane = LaneOnAxis(kv.Key, bridgeVertical, lane, laneOf);
                         HighwayLane underLane = LaneOnAxis(kv.Key, !bridgeVertical, lane, laneOf);
-                        bool bridgeArrow = bridgeLane.Active && !bridgeLane.OneWay &&
-                            ShouldDrawStraightArrow(kv.Key, bridgeLane, laneOf);
-                        bool underArrow = underLane.Active && !underLane.OneWay &&
-                            ShouldDrawStraightArrow(kv.Key, underLane, laneOf);
+                        bool bridgeArrow = bridgeLane.Active && ShouldDrawStraightArrow(kv.Key, bridgeLane, laneOf);
+                        bool underArrow = underLane.Active && ShouldDrawStraightArrow(kv.Key, underLane, laneOf);
                         AppendCell(layers, c, kv.Value, type, cellSize, cellSize * widthFraction,
                             false, bridgeLane, underLane, bridgeArrow, underArrow);
                     }
@@ -224,13 +222,19 @@ namespace CityGame.CellRoads
                 Vector2 approach = points[i] - incoming * radius;
                 Vector2 exit = points[i] + outgoing * radius;
                 AppendCurveLine(curve, curveCells, cursor, approach, i - 1, cellSize, steps);
+
+                // Точная круговая дуга сохраняет внутренний радиус больше нуля даже у широкого
+                // полотна. Квадратичная кривая в этом месте давала меньший радиус и пересекала края.
+                Vector2 center = points[i] - incoming * radius + outgoing * radius;
+                Vector2 startRadius = approach - center;
+                Vector2 endRadius = exit - center;
+                float startAngle = Mathf.Atan2(startRadius.y, startRadius.x) * Mathf.Rad2Deg;
+                float deltaAngle = Mathf.DeltaAngle(startAngle,
+                    Mathf.Atan2(endRadius.y, endRadius.x) * Mathf.Rad2Deg);
                 for (int step = 1; step <= cornerSteps; step++)
                 {
-                    float t = step / (float)cornerSteps;
-                    float oneMinusT = 1f - t;
-                    Vector2 p = oneMinusT * oneMinusT * approach +
-                        2f * oneMinusT * t * points[i] + t * t * exit;
-                    curve.Add(p);
+                    float angle = (startAngle + deltaAngle * step / cornerSteps) * Mathf.Deg2Rad;
+                    curve.Add(center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius);
                     curveCells.Add(i);
                 }
                 cursor = exit;
@@ -338,12 +342,12 @@ namespace CityGame.CellRoads
             Func<Vector2Int, HighwayLane> laneOf)
         {
             if (laneOf == null) return default;
-            if (current.Active && !current.OneWay && IsOnAxis(current.Heading, vertical)) return current;
+            if (current.Active && IsOnAxis(current.Heading, vertical)) return current;
             int[] sides = vertical ? new[] { Side.N, Side.S } : new[] { Side.E, Side.W };
             foreach (int side in sides)
             {
                 HighwayLane candidate = laneOf(cell + Side.Vec(side));
-                if (candidate.Active && !candidate.OneWay && IsOnAxis(candidate.Heading, vertical)) return candidate;
+                if (candidate.Active && IsOnAxis(candidate.Heading, vertical)) return candidate;
             }
             return default;
         }
@@ -714,6 +718,9 @@ namespace CityGame.CellRoads
             {
                 AddDash(L.Verts[RoadLayers.Marking], L.Tris[RoadLayers.Marking], c, lowA, h, lw);
                 AddDash(L.Verts[RoadLayers.Marking], L.Tris[RoadLayers.Marking], c, lowB, h, lw);
+                if (underLane.Active && underLane.OneWay && drawUnderArrow)
+                    AddHighwayArrow(L.Verts[RoadLayers.Marking], L.Tris[RoadLayers.Marking], c,
+                        Side.Vec(underLane.Heading), cell);
             }
 
             // Тень лежит только на нижней дороге по бокам от полотна.
@@ -752,6 +759,10 @@ namespace CityGame.CellRoads
                 }
                 if (drawBridgeArrow)
                     AddHighwayArrow(bv, bt, c, routeAlong, cell);
+            }
+            else if (bridgeLane.Active && bridgeLane.OneWay && drawBridgeArrow)
+            {
+                AddHighwayArrow(bv, bt, c, Side.Vec(bridgeLane.Heading), cell);
             }
         }
 

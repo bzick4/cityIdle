@@ -62,6 +62,14 @@ namespace CityGame
             FitWidth();
         }
 
+        /// <summary>Центрирует стартовый сектор и оставляет по краям часть соседних секторов.</summary>
+        public void SetStartView(Vector2 center, float hexSize, float neighborFraction)
+        {
+            float sectorWidth = 1.7320508f * hexSize;
+            float width = sectorWidth * (1f + 2f * Mathf.Clamp01(neighborFraction));
+            SetView(center, width);
+        }
+
         void FitWidth()
         {
             if (Cam == null) return;

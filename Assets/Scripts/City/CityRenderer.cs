@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using CityGame.Flow;
+using CityGame.Sectors;
 using UnityEngine;
 
 namespace CityGame.Buildings
@@ -24,14 +25,18 @@ namespace CityGame.Buildings
         CityModel _model;
         FlowSolver _flow;
         readonly MeshBatch _batch = new MeshBatch();
+        readonly MeshBatch _islandBatch = new MeshBatch();
         readonly List<GameObject> _views = new List<GameObject>();
         Material _material;
+        GameObject _islandView;
+        Biomes _biomes;
 
-        public void Bind(CityModel model, FlowSolver flow = null)
+        public void Bind(CityModel model, FlowSolver flow = null, Biomes biomes = null)
         {
             Unbind();
             _model = model;
             _flow = flow;
+            _biomes = biomes;
             _model.Rebuilt += Redraw;
             if (_flow != null) _flow.Solved += Redraw;
             Redraw();
@@ -71,9 +76,13 @@ namespace CityGame.Buildings
             }
 
             Clear();
+            _islandBatch.Clear();
             foreach (District d in _model.Districts)
             {
                 _batch.Clear();
+                if (_biomes != null)
+                    foreach (BuildingCell cell in d.Cells)
+                        if (_biomes.IsSea(cell.Pos)) AddIsland(Center(cell.Pos), _islandBatch, Hash(cell.Pos));
                 BuildDistrict(d, _batch);
                 var go = new GameObject("District " + d.Id + " " + d.Title + " x" + d.Count);
                 go.transform.SetParent(transform, false);
@@ -82,6 +91,28 @@ namespace CityGame.Buildings
                 r.sharedMaterial = _material;
                 r.sortingOrder = SortingOrder;
                 _views.Add(go);
+            }
+
+            if (_islandBatch.V.Count > 0)
+            {
+                if (_islandView == null)
+                {
+                    _islandView = new GameObject("Sea building islands");
+                    _islandView.transform.SetParent(transform, false);
+                    _islandView.AddComponent<MeshFilter>();
+                    var renderer = _islandView.AddComponent<MeshRenderer>();
+                    renderer.sharedMaterial = _material;
+                    renderer.sortingOrder = SortingOrder - 2;
+                }
+                var filter = _islandView.GetComponent<MeshFilter>();
+                filter.sharedMesh = _islandBatch.ToMesh(filter.sharedMesh);
+            }
+            else if (_islandView != null)
+            {
+                var filter = _islandView.GetComponent<MeshFilter>();
+                if (filter != null && filter.sharedMesh != null) Destroy(filter.sharedMesh);
+                Destroy(_islandView);
+                _islandView = null;
             }
         }
 
@@ -105,6 +136,31 @@ namespace CityGame.Buildings
         Vector2 Center(Vector2Int p)
         {
             return new Vector2((p.x + 0.5f) * CellSize, (p.y + 0.5f) * CellSize);
+        }
+
+        void AddIsland(Vector2 center, MeshBatch batch, int seed)
+        {
+            const int points = 10;
+            float cs = CellSize;
+            var shadow = new List<Vector2>(points);
+            var shore = new List<Vector2>(points);
+            var grass = new List<Vector2>(points);
+            Vector2 shadowOffset = new Vector2(0.035f, -0.055f) * cs;
+            for (int i = 0; i < points; i++)
+            {
+                float angle = Mathf.PI * 2f * i / points;
+                int bits = (seed >> (i % 6 * 4)) & 0xF;
+                float irregularity = 0.91f + bits / 15f * 0.16f;
+                Vector2 direction = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                shadow.Add(center + shadowOffset + Vector2.Scale(direction, new Vector2(cs * 0.64f, cs * 0.59f)) * irregularity);
+                shore.Add(center + Vector2.Scale(direction, new Vector2(cs * 0.59f, cs * 0.55f)) * irregularity);
+                grass.Add(center + Vector2.Scale(direction, new Vector2(cs * 0.49f, cs * 0.46f)) * irregularity);
+            }
+
+            batch.Polygon(shadow, new Color(0.11f, 0.25f, 0.34f, 0.28f));
+            batch.Ring(center, cs * 0.61f, cs * 0.66f, 14, new Color(0.82f, 0.94f, 0.97f, 0.26f));
+            batch.Polygon(shore, new Color32(0xD5, 0xC2, 0x91, 0xFF));
+            batch.Polygon(grass, new Color32(0xA9, 0xC2, 0x98, 0xFF));
         }
 
         bool Same(District d, Vector2Int pos)
