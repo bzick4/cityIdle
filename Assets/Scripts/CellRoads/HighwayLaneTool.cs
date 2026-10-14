@@ -120,7 +120,10 @@ namespace CityGame.CellRoads
                 bool canExtendCurrentType = startLane.Active && startLane.OneWay == OneWayMode &&
                                             Side.Count(_map.Mask(start)) == 1;
                 bool oneWayCanJoinHighway = OneWayMode && startLane.Active && !startLane.OneWay;
-                if (startLane.Active && !canExtendCurrentType && !oneWayCanJoinHighway)
+                // Шоссе можно отвести в сторону от середины другого шоссе.
+                bool highwayCanBranch = !OneWayMode && startLane.Active && !startLane.OneWay &&
+                                        Side.Count(_map.Mask(start)) == 2;
+                if (startLane.Active && !canExtendCurrentType && !oneWayCanJoinHighway && !highwayCanBranch)
                 {
                     Message?.Invoke("Здесь уже проходит другой тип дороги");
                     return;
@@ -138,6 +141,11 @@ namespace CityGame.CellRoads
             if (PointerInput.Up) Commit();
         }
 
+        /// <summary>Минимум клеток до замыкания кольца: периметр квадрата 3×3.</summary>
+        const int MinRingCells = 8;
+
+        bool Closed => _path.Count > 2 && _path[0] == _path[_path.Count - 1];
+
         void Follow(Vector2Int target)
         {
             for (int guard = 0; guard < 128; guard++)
@@ -145,13 +153,27 @@ namespace CityGame.CellRoads
                 Vector2Int tail = _path[_path.Count - 1];
                 if (tail == target) return;
                 int existing = _path.IndexOf(target);
-                if (existing >= 0)
+                bool toRingStart = existing == 0 && !Closed && _path.Count >= MinRingCells &&
+                                   !_map.LaneAt(_path[0]).Active;
+                if (toRingStart && Mathf.Abs(tail.x - target.x) + Mathf.Abs(tail.y - target.y) == 1)
+                {
+                    // Тянем к началу и на последнем шаге замыкаем кольцо (как МКАД).
+                    _path.Add(target);
+                    UpdatePreview();
+                    return;
+                }
+
+                // Палец прошёл над началом длинного маршрута, но хвост ещё не рядом: не откатываем маршрут,
+                // а продолжаем тянуть к цели.
+                if (existing >= 0 && !toRingStart)
                 {
                     _path.RemoveRange(existing + 1, _path.Count - existing - 1);
                     _axisKnown = false;
                     UpdatePreview();
                     return;
                 }
+
+                if (Closed) return; // кольцо замкнуто: дальше тянуть некуда, можно только откатить назад
 
                 Vector2Int delta = target - tail;
                 if (!_axisKnown)
@@ -184,8 +206,9 @@ namespace CityGame.CellRoads
 
         /// <summary>
         /// Можно ли продлить маршрут с клетки from на соседнюю to.
-        /// Односторонняя дорога может пересекать обычную дорогу (перекрёсток) и примыкать к ней,
-        /// но не идёт вдоль неё и не накладывается на шоссе или другую одностороннюю.
+        /// Шоссе и односторонние дороги проходят друг сквозь друга по прямой: на пересечении строится мост.
+        /// Если маршрут заканчивается на чужой полосе, это присоединение (развилка), а не мост.
+        /// Односторонняя дорога может примыкать к повороту шоссе (съезд и въезд) с любой свободной стороны.
         /// </summary>
         bool CanStep(Vector2Int from, Vector2Int to)
         {
@@ -193,63 +216,118 @@ namespace CityGame.CellRoads
             HighwayLane lane = _map.LaneAt(to);
             int side = Side.FromDelta(to - from);
             if (side == 0) return false;
-            if (_path.Count == 1)
-            {
-                HighwayLane startLane = _map.LaneAt(from);
-                if (startLane.Active && startLane.OneWay == OneWayMode && Side.Count(_map.Mask(from)) == 1)
-                {
-                    // С любого свободного конца можно повернуть в любую сторону,
-                    // кроме клетки, которая уже является его продолжением.
-                    if ((_map.Mask(from) & side) != 0) return false;
-                }
-            }
             HighwayLane fromLane = _map.LaneAt(from);
-            if (_path.Count > 1 && fromLane.Active && fromLane.OneWay == OneWayMode &&
-                Side.Count(_map.Mask(from)) == 1) return false; // существующий конец — только точка соединения
+            int fromMask = _map.Mask(from);
+
+            if (_path.Count == 1 && fromLane.Active)
+            {
+                // Со своей полосы или с чужой можно уйти только в свободную сторону, не вдоль готовой связи.
+                if ((fromMask & side) != 0) return false;
+                // Отвод от середины шоссе идёт только вбок, а не вдоль него.
+                if (!OneWayMode && Side.Count(fromMask) == 2 && (fromMask & Side.Opposite(side)) != 0) return false;
+            }
+
+            if (_path.Count > 1 && fromLane.Active)
+            {
+                // Мы стоим на чужой полосе: идти дальше можно только по прямой сквозь неё (мост).
+                // Иначе маршрут здесь кончается (присоединение к середине, концу или повороту).
+                bool straight = Side.FromDelta(from - _path[_path.Count - 2]) == side;
+                if (!(straight && _map.CanCross(from, side))) return false;
+            }
+
             if (!OneWayMode)
             {
                 if (!lane.Active) return true;
-                return !lane.OneWay && Side.Count(_map.Mask(to)) == 1 &&
-                       (_map.Mask(to) & Side.Opposite(side)) == 0;
+                if (lane.OneWay) return _map.CanCross(to, side); // односторонняя поперёк: мост
+                int toMask = _map.Mask(to);
+                if (Side.Count(toMask) == 1) return (toMask & Side.Opposite(side)) == 0; // конец шоссе
+                // Середина шоссе: примыкаем боковым подходом (развилка) или проходим сквозь мостом.
+                return Side.Count(toMask) == 2 && (toMask & (side | Side.Opposite(side))) == 0;
             }
+
             if (lane.Active && lane.OneWay)
-                return Side.Count(_map.Mask(to)) == 1 && (_map.Mask(to) & Side.Opposite(side)) == 0;
-            if (lane.Active) return true; // шоссе: проверки направления делает SetOneWayPath
+            {
+                int toMask = _map.Mask(to);
+                if (Side.Count(toMask) == 1) return (toMask & Side.Opposite(side)) == 0; // конец: соединение
+                return _map.CanCross(to, side); // середина: только мост
+            }
+            // Шоссе: примыкаем к концу, к середине, к повороту (съезд) или проходим мостом. Заходим только с свободной стороны.
+            if (lane.Active) return (_map.Mask(to) & Side.Opposite(side)) == 0;
             int mask = _map.Mask(to);
             if (mask == 0) return true;
             // Обычная дорога: клетка не должна быть уже соединена с нашей стороны, то есть не вдоль дороги.
             return (mask & Side.Opposite(side)) == 0;
         }
 
+        /// <summary>
+        /// Если палец отпущен на клетке середины односторонней полосы, присоединиться там нельзя:
+        /// такой хвост (мост без выезда) отбрасываем.
+        /// </summary>
+        void TrimDanglingBridge()
+        {
+            while (_path.Count > 2)
+            {
+                Vector2Int last = _path[_path.Count - 1];
+                HighwayLane lane = _map.LaneAt(last);
+                if (lane.Active && lane.OneWay && Side.Count(_map.Mask(last)) >= 2) _path.RemoveAt(_path.Count - 1);
+                else break;
+            }
+        }
+
         void Commit()
         {
             _drawing = false;
+            int pathBefore = _path.Count;
+            if (!Closed) TrimDanglingBridge();
+            bool trimmed = _path.Count < pathBefore;
+            // Отпустили палец рядом с началом: замыкаем кольцо сами, не заставляя попадать точно в первую клетку.
+            if (!Closed && _path.Count >= MinRingCells && !_map.LaneAt(_path[0]).Active &&
+                !_map.LaneAt(_path[_path.Count - 1]).Active)
+            {
+                Vector2Int a = _path[_path.Count - 1], b = _path[0];
+                if (Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) == 1) _path.Add(b);
+            }
+
             float unitCost = _economy != null
                 ? (OneWayMode ? _economy.RoadCostPerCell : _economy.HighwayCostPerCell)
                 : 0f;
             var accepted = new List<Vector2Int>();
             float total = 0f;
-            foreach (Vector2Int cell in _path)
+            bool closed = Closed;
+            for (int i = 0; i < _path.Count; i++)
             {
+                Vector2Int cell = _path[i];
                 float factor = CostFactorAt != null ? CostFactorAt(cell) : 1f;
                 HighwayLane lane = _map.LaneAt(cell);
-                bool existingLane = lane.Active && lane.OneWay == OneWayMode;
-                bool highwayConnection = OneWayMode &&
+                bool bridge = _map.IsCrossing(_path, i); // мост строится заново, он не бесплатный
+                bool existingLane = lane.Active && lane.OneWay == OneWayMode && !bridge;
+                bool highwayConnection = OneWayMode && !bridge &&
                     ((lane.Active && !lane.OneWay) || (!lane.Active && _map.Mask(cell) != 0));
-                float cost = existingLane || highwayConnection ? 0f : unitCost * factor;
+                bool closingCell = closed && i == _path.Count - 1; // клетка замыкания уже оплачена как первая
+                float cost = existingLane || highwayConnection || closingCell ? 0f : unitCost * factor;
                 if (_economy != null && _economy.Money < total + cost) break;
                 accepted.Add(cell);
                 total += cost;
             }
+            int bridges = 0;
+            for (int i = 0; i < accepted.Count; i++)
+                if (_map.IsCrossing(accepted, i)) bridges++;
             bool ok = accepted.Count >= 2 && (OneWayMode
                 ? _map.SetOneWayPath(accepted)
                 : _map.SetHighwayPath(accepted, true));
             if (ok && total > 0f && _economy != null) _economy.TrySpend(total);
+            bool ringBuilt = ok && CellRoadMap.IsClosedPath(accepted);
             Message?.Invoke(!ok ? (accepted.Count < 2
                     ? "Нужно провести маршрут минимум через две клетки"
-                    : OneWayMode
-                        ? "Продлевай дорогу от её конца; шоссе можно пересекать только прямо"
-                        : "Продлевай шоссе от его конца и по направлению полосы") :
+                    : _map.LaneAt(accepted[0]).Active && _map.LaneAt(accepted[accepted.Count - 1]).Active
+                        ? "Эти концы не соединить: направления встречные. Веди от выезда одной полосы ко въезду другой"
+                        : OneWayMode
+                            ? "Соединять можно выезд одной дороги с въездом другой. Чтобы пересечь дорогу мостом, веди прямо и дальше за неё"
+                            : "Соединять можно выезд одной полосы с въездом другой, либо примыкать сбоку к середине шоссе") :
+                _map.LastJoinFlipped ? "Концы соединены · направление одной из дорог развёрнуто, чтобы потоки сошлись" :
+                bridges > 0 ? (bridges == 1 ? "Построен мост" : "Построены мосты: " + bridges + " · дороги на пересечении не соединены") :
+                trimmed ? "Мост нужно довести до конца: отпусти палец за пересекаемой дорогой" :
+                ringBuilt ? (OneWayMode ? "Кольцо односторонней дороги замкнуто" : "Кольцевое шоссе замкнуто · встречное кольцо проложи рядом обратным ходом") :
                 OneWayMode ? "Односторонняя дорога построена" : "Шоссе построено · встречную полосу проложи рядом обратным ходом");
             _path.Clear();
             if (_preview != null) _preview.enabled = false;

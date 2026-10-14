@@ -250,16 +250,188 @@ namespace CityGame.CellRoads
         }
 
         /// <summary>Строит отдельное полотно шоссе на пустых клетках или поверх обычной дороги.</summary>
+        /// <summary>Кольцо: маршрут возвращается в свою первую клетку (как МКАД).</summary>
+        public static bool IsClosedPath(IReadOnlyList<Vector2Int> path)
+        {
+            return path != null && path.Count >= 5 && path[0] == path[path.Count - 1];
+        }
+
+        /// <summary>Последнее соединение двух концов развернуло одну из дорог, чтобы потоки сошлись.</summary>
+        public bool LastJoinFlipped { get; private set; }
+
+        /// <summary>
+        /// Цепочка клеток направленной дороги от свободного конца до другого свободного конца.
+        /// Null, если на пути развилка, обрыв, смена типа дороги или кольцо: такую цепочку не разворачиваем.
+        /// </summary>
+        List<Vector2Int> LaneChainFrom(Vector2Int end, bool oneWay)
+        {
+            var chain = new List<Vector2Int>();
+            Vector2Int cur = end;
+            int guard = _masks.Count + 2;
+            while (guard-- > 0)
+            {
+                HighwayLane lane = LaneAt(cur);
+                if (!lane.Active || !lane.Manual || lane.OneWay != oneWay) return null;
+                if (chain.Contains(cur)) return null;
+                chain.Add(cur);
+                int mask = Mask(cur);
+                int count = Side.Count(mask);
+                if (chain.Count == 1)
+                {
+                    if (count != 1) return null;
+                }
+                else if (count == 1) return chain;
+                else if (count != 2) return null;
+
+                int back = chain.Count > 1 ? Side.FromDelta(chain[chain.Count - 2] - cur) : 0;
+                int forward = mask & ~back;
+                if (Side.Count(forward) != 1) return null;
+                cur += Side.Vec(forward);
+            }
+            return null;
+        }
+
+        void ReverseChain(List<Vector2Int> chain)
+        {
+            foreach (Vector2Int cell in chain)
+            {
+                if (!_highwayDirections.TryGetValue(cell, out int heading)) continue;
+                int mask = Mask(cell);
+                // Поворот: новый выезд это сторона, откуда раньше въезжали; на прямой и на концах это просто обратная сторона.
+                _highwayDirections[cell] = Side.Count(mask) == 2 && (mask & heading) != 0 && (mask & Side.Opposite(heading)) == 0
+                    ? mask & ~heading
+                    : Side.Opposite(heading);
+            }
+        }
+
+        /// <summary>
+        /// Два готовых конца соединяют, но их потоки встречные (начало с началом или конец с концом).
+        /// Разворачиваем более короткую из двух дорог целиком, чтобы потоки сошлись.
+        /// </summary>
+        void ReconcileEnds(IReadOnlyList<Vector2Int> path, bool oneWay)
+        {
+            Vector2Int a = path[0], b = path[path.Count - 1];
+            HighwayLane first = LaneAt(a), last = LaneAt(b);
+            if (!first.Active || !last.Active || first.OneWay != oneWay || last.OneWay != oneWay) return;
+            int firstSign = EndpointRouteSign(first, Mask(a));
+            int lastSign = -EndpointRouteSign(last, Mask(b));
+            if (firstSign == 0 || lastSign == 0 || firstSign == lastSign) return;
+
+            List<Vector2Int> chainA = LaneChainFrom(a, oneWay);
+            List<Vector2Int> chainB = LaneChainFrom(b, oneWay);
+            if (chainA == null && chainB == null) return;
+            if (chainA != null && chainB != null && (chainA.Contains(b) || chainB.Contains(a))) return;
+            List<Vector2Int> pick = chainA == null ? chainB : chainB == null ? chainA :
+                chainA.Count < chainB.Count ? chainA : chainB;
+            ReverseChain(pick);
+            LastJoinFlipped = true;
+        }
+
+        static bool OnSameAxis(int a, int b)
+        {
+            return a == b || a == Side.Opposite(b);
+        }
+
+        /// <summary>
+        /// Можно ли пройти сквозь клетку направленной дороги (шоссе или односторонней) прямой,
+        /// идущей в сторону stepSide. Подходит прямая клетка без ответвлений, поперёк полосы.
+        /// На такой клетке строится мост: новая дорога идёт поверх, соединения между дорогами нет.
+        /// </summary>
+        public bool CanCross(Vector2Int cell, int stepSide)
+        {
+            if (stepSide == 0) return false;
+            HighwayLane lane = LaneAt(cell);
+            if (!lane.Active) return false;
+            int mask = Mask(cell);
+            if (mask != (Side.N | Side.S) && mask != (Side.E | Side.W)) return false;
+            return !OnSameAxis(lane.Heading, stepSide);
+        }
+
+        /// <summary>Клетка i пути — мост через чужую направленную полосу (путь идёт сквозь неё по прямой).</summary>
+        public bool IsCrossing(IReadOnlyList<Vector2Int> path, int i)
+        {
+            if (path == null || i <= 0 || i + 1 >= path.Count) return false;
+            int inSide = Side.FromDelta(path[i] - path[i - 1]);
+            int outSide = Side.FromDelta(path[i + 1] - path[i]);
+            return inSide != 0 && inSide == outSide && CanCross(path[i], inSide);
+        }
+
+        /// <summary>
+        /// Полоса, по которой идёт проезд через клетку вдоль стороны side. В клетке моста собственная
+        /// полоса клетки может принадлежать дороге другой оси: тогда берём полосу ближайшей клетки на этой оси.
+        /// </summary>
+        public HighwayLane LaneAlong(Vector2Int cell, int side)
+        {
+            HighwayLane own = LaneAt(cell);
+            if (own.Active && OnSameAxis(own.Heading, side)) return own;
+            if (Side.Count(Mask(cell)) != 4) return default(HighwayLane);
+            for (int d = 0; d < 2; d++)
+            {
+                int dir = d == 0 ? side : Side.Opposite(side);
+                Vector2Int c = cell;
+                for (int k = 0; k < 8; k++)
+                {
+                    c += Side.Vec(dir);
+                    if (!_masks.ContainsKey(c)) break;
+                    HighwayLane lane = LaneAt(c);
+                    if (lane.Active && OnSameAxis(lane.Heading, side)) return lane;
+                    if (Side.Count(Mask(c)) != 4) break;
+                }
+            }
+
+            return default(HighwayLane);
+        }
+
+        void MakeBridge(Vector2Int cell, int pathSide)
+        {
+            bool vertical = pathSide == Side.N || pathSide == Side.S;
+            // Новая дорога идёт поверх старой: мост лежит вдоль новой дороги.
+            _types[cell] = vertical ? JunctionType.OverpassVertical : JunctionType.Overpass;
+        }
+
         public bool SetHighwayPath(IReadOnlyList<Vector2Int> path, bool standalone = true)
         {
+            var snapshot = new Dictionary<Vector2Int, int>(_highwayDirections);
+            if (BuildHighwayPath(path, standalone)) return true;
+            RestoreDirections(snapshot); // разворот встречной дороги не должен остаться при неудаче
+            return false;
+        }
+
+        void RestoreDirections(Dictionary<Vector2Int, int> snapshot)
+        {
+            _highwayDirections.Clear();
+            foreach (var kv in snapshot) _highwayDirections[kv.Key] = kv.Value;
+            LastJoinFlipped = false;
+        }
+
+        bool BuildHighwayPath(IReadOnlyList<Vector2Int> path, bool standalone)
+        {
             if (path == null || path.Count < 2) return false;
+            bool closed = IsClosedPath(path);
             LockExistingHighways();
+            var crossing = new bool[path.Count]; // клетки, где путь идёт мостом через чужую полосу
+            for (int i = 0; i < path.Count; i++) crossing[i] = IsCrossing(path, i);
+            LastJoinFlipped = false;
+            if (!closed) ReconcileEnds(path, false);
 
             HighwayLane first = LaneAt(path[0]);
             HighwayLane last = LaneAt(path[path.Count - 1]);
-            bool extendFromFirst = first.Active && !first.OneWay;
-            bool extendFromLast = last.Active && !last.OneWay;
-            if ((first.Active && !extendFromFirst) || (last.Active && !extendFromLast)) return false;
+            // Середина готового шоссе (две связи): к ней можно примкнуть боковым съездом, получится развилка.
+            bool joinFirst = first.Active && !first.OneWay && Side.Count(Mask(path[0])) == 2;
+            bool joinLast = last.Active && !last.OneWay && Side.Count(Mask(path[path.Count - 1])) == 2;
+            bool extendFromFirst = first.Active && !first.OneWay && !joinFirst;
+            bool extendFromLast = last.Active && !last.OneWay && !joinLast;
+            if ((first.Active && !extendFromFirst && !joinFirst) || (last.Active && !extendFromLast && !joinLast)) return false;
+            if (joinFirst)
+            {
+                int step = Side.FromDelta(path[1] - path[0]);
+                if (step == 0 || (Mask(path[0]) & (step | Side.Opposite(step))) != 0) return false;
+            }
+            if (joinLast)
+            {
+                int conn = Side.FromDelta(path[path.Count - 2] - path[path.Count - 1]);
+                if (conn == 0 || (Mask(path[path.Count - 1]) & (conn | Side.Opposite(conn))) != 0) return false;
+            }
             int routeSign = 0;
             if (extendFromFirst)
             {
@@ -272,7 +444,9 @@ namespace CityGame.CellRoads
             if (extendFromLast)
             {
                 int mask = Mask(path[path.Count - 1]);
-                int lastSign = EndpointRouteSign(last, mask);
+                // Для конца маршрута знак обратный: к началу полосы (въезд) мы идём по потоку,
+                // к её концу (выезд) идём против потока. Без этого два готовых конца не соединить.
+                int lastSign = -EndpointRouteSign(last, mask);
                 int lastConnectionSide = Side.FromDelta(path[path.Count - 2] - path[path.Count - 1]);
                 if (lastSign == 0 || lastConnectionSide == 0 || (mask & lastConnectionSide) != 0) return false;
                 if (routeSign != 0 && routeSign != lastSign) return false;
@@ -282,8 +456,9 @@ namespace CityGame.CellRoads
             for (int i = 0; i < path.Count; i++)
             {
                 HighwayLane lane = LaneAt(path[i]);
-                bool endpoint = (i == 0 && extendFromFirst) || (i == path.Count - 1 && extendFromLast);
-                if (lane.Active && !endpoint) return false;
+                bool endpoint = (i == 0 && (extendFromFirst || joinFirst)) ||
+                                (i == path.Count - 1 && (extendFromLast || joinLast));
+                if (lane.Active && !endpoint && !crossing[i]) return false;
                 if (i + 1 < path.Count)
                 {
                     int dir = Side.FromDelta(path[i + 1] - path[i]);
@@ -296,6 +471,7 @@ namespace CityGame.CellRoads
             for (int i = 0; i < path.Count; i++)
             {
                 Vector2Int cell = path[i];
+                if (crossing[i]) continue; // клетка остаётся чужой полосой, мы лишь проходим по мосту
                 bool emptyCell = !_masks.ContainsKey(cell) || _masks[cell] == 0;
                 if (!_masks.ContainsKey(cell)) _masks[cell] = 0;
                 if (standalone)
@@ -317,7 +493,19 @@ namespace CityGame.CellRoads
             }
 
             for (int i = 0; i < path.Count; i++)
+                if (crossing[i]) MakeBridge(path[i], Side.FromDelta(path[i + 1] - path[i]));
+
+            // Готовый конец полосы, к которому мы пристроились по потоку, сохраняет своё направление:
+            // это въезд (начало) другой полосы, поток дальше идёт по ней. Иначе при замыкании кольца
+            // на повороте голова полосы разворачивалась бы по последнему шагу пути.
+            bool keepFirstHeading = extendFromFirst && routeSign < 0;
+            bool keepLastHeading = extendFromLast && routeSign > 0;
+            for (int i = 0; i < path.Count; i++)
             {
+                if (crossing[i]) continue; // у моста направление нижней полосы остаётся прежним
+                if ((i == 0 && keepFirstHeading) || (i == path.Count - 1 && keepLastHeading)) continue;
+                if (closed && i == path.Count - 1) continue; // замыкающая клетка уже получила направление как первая
+                if ((i == 0 && joinFirst) || (i == path.Count - 1 && joinLast)) continue; // у шоссе, к которому примыкаем, направление своё
                 int pathDirection = i + 1 < path.Count
                     ? Side.FromDelta(path[i + 1] - path[i])
                     : Side.FromDelta(path[i] - path[i - 1]);
@@ -335,8 +523,21 @@ namespace CityGame.CellRoads
         /// </summary>
         public bool SetOneWayPath(IReadOnlyList<Vector2Int> path)
         {
+            var snapshot = new Dictionary<Vector2Int, int>(_highwayDirections);
+            if (BuildOneWayPath(path)) return true;
+            RestoreDirections(snapshot);
+            return false;
+        }
+
+        bool BuildOneWayPath(IReadOnlyList<Vector2Int> path)
+        {
             if (path == null || path.Count < 2) return false;
+            bool closed = IsClosedPath(path);
             LockExistingHighways();
+            var crossing = new bool[path.Count]; // мосты через шоссе и другие односторонние дороги
+            for (int i = 0; i < path.Count; i++) crossing[i] = IsCrossing(path, i);
+            LastJoinFlipped = false;
+            if (!closed) ReconcileEnds(path, true);
 
             bool hasRoadCell = false;
             var preserveDirection = new bool[path.Count]; // быстрые шоссе и обычные дороги сохраняют своё направление
@@ -356,7 +557,7 @@ namespace CityGame.CellRoads
             if (extendFromLast)
             {
                 int mask = Mask(path[path.Count - 1]);
-                int lastSign = EndpointRouteSign(lastLane, mask);
+                int lastSign = -EndpointRouteSign(lastLane, mask); // см. SetHighwayPath: у конца маршрута знак обратный
                 int lastConnectionSide = Side.FromDelta(path[path.Count - 2] - path[path.Count - 1]);
                 if (lastSign == 0 || lastConnectionSide == 0 || (mask & lastConnectionSide) != 0) return false;
                 if (routeSign != 0 && routeSign != lastSign) return false;
@@ -370,20 +571,19 @@ namespace CityGame.CellRoads
                 HighwayLane lane = LaneAt(path[i]);
                 bool highway = lane.Active && !lane.OneWay;
                 preserveDirection[i] = highway;
+                if (crossing[i])
+                {
+                    preserveDirection[i] = true; // мост: нижняя дорога сохраняет своё направление
+                    continue;
+                }
                 if (lane.Active && lane.OneWay)
                 {
                     if (i != 0 && i != path.Count - 1) return false;
                     if (Side.Count(Mask(path[i])) != 1) return false;
                     continue;
                 }
-                if (highway && i > 0 && i + 1 < path.Count)
-                {
-                    int incoming = Side.FromDelta(path[i] - path[i - 1]);
-                    int outgoing = Side.FromDelta(path[i + 1] - path[i]);
-                    // incoming уже направлен от предыдущей клетки к перекрёстку.
-                    // Чтобы пересечь шоссе насквозь, следующий шаг должен продолжать это направление.
-                    if (outgoing != incoming) return false;
-                }
+                // Шоссе в середине пути можно только пересечь мостом (прямо, поперёк полосы).
+                if (highway && i > 0 && i + 1 < path.Count) return false;
                 if (_masks.TryGetValue(path[i], out int existingMask) && existingMask != 0 && !highway)
                 {
                     // Обычная двусторонняя дорога: односторонняя может её пересечь или примкнуть к ней
@@ -417,7 +617,13 @@ namespace CityGame.CellRoads
             }
 
             for (int i = 0; i < path.Count; i++)
+                if (crossing[i]) MakeBridge(path[i], Side.FromDelta(path[i + 1] - path[i]));
+
+            if (extendFromFirst && routeSign < 0) preserveDirection[0] = true;
+            if (extendFromLast && routeSign > 0) preserveDirection[path.Count - 1] = true;
+            for (int i = 0; i < path.Count; i++)
             {
+                if (closed && i == path.Count - 1) continue;
                 if (preserveDirection[i]) continue; // не перезаписываем направление шоссе или обычной дороги
                 int pathDirection = i + 1 < path.Count
                     ? Side.FromDelta(path[i + 1] - path[i])
@@ -695,10 +901,21 @@ namespace CityGame.CellRoads
                     if (_highwayDirections.TryGetValue(n, out int heading) &&
                         (_masks[n] & heading) == 0)
                     {
-                        _highwayDirections.Remove(n);
-                        _rampCells.Remove(n);
+                        int rest = _masks[n];
+                        if (Side.Count(rest) == 1)
+                        {
+                            // Соседняя клетка стала концом полосы: шоссе остаётся шоссе, иначе разрыв
+                            // нельзя будет соединить обратно. Направление идёт к оборванному концу.
+                            _highwayDirections[n] = Side.Opposite(rest);
+                        }
+                        else
+                        {
+                            _highwayDirections.Remove(n);
+                            _rampCells.Remove(n);
+                        }
                     }
                     if (_types.TryGetValue(n, out JunctionType nt) && !IsValid(n, nt)) _types.Remove(n);
+                    DropOrphanHighwayCell(n);
                 }
             }
 
@@ -719,6 +936,19 @@ namespace CityGame.CellRoads
             _standaloneOriginalMasks.Remove(cell);
             Changed?.Invoke();
             return true;
+        }
+
+        /// <summary>Клетка, созданная шоссе, без единой связи больше не нужна: убираем её совсем.</summary>
+        void DropOrphanHighwayCell(Vector2Int n)
+        {
+            if (!_ownedHighwayCells.Contains(n) || !_masks.TryGetValue(n, out int m) || m != 0) return;
+            _masks.Remove(n);
+            _types.Remove(n);
+            _highwayDirections.Remove(n);
+            _rampCells.Remove(n);
+            _standaloneHighwayCells.Remove(n);
+            _ownedHighwayCells.Remove(n);
+            _standaloneOriginalMasks.Remove(n);
         }
 
         /// <summary>Маски пути как будто он уже построен. Нужны для превью.</summary>

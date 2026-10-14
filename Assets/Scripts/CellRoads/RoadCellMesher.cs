@@ -66,6 +66,8 @@ namespace CityGame.CellRoads
             var layers = new RoadLayers();
             var entries = new List<KeyValuePair<Vector2Int, int>>();
             foreach (var item in cells) entries.Add(item);
+            var allMasks = new Dictionary<Vector2Int, int>();
+            foreach (var item in entries) allMasks[item.Key] = item.Value;
             foreach (var kv in entries)
             {
                 Vector2 c = new Vector2((kv.Key.x + 0.5f) * cellSize, (kv.Key.y + 0.5f) * cellSize);
@@ -107,8 +109,8 @@ namespace CityGame.CellRoads
                     if (overpass)
                     {
                         bool bridgeVertical = type == JunctionType.OverpassVertical;
-                        HighwayLane bridgeLane = LaneOnAxis(kv.Key, bridgeVertical, lane, laneOf);
-                        HighwayLane underLane = LaneOnAxis(kv.Key, !bridgeVertical, lane, laneOf);
+                        HighwayLane bridgeLane = LaneOnAxis(kv.Key, bridgeVertical, lane, laneOf, allMasks);
+                        HighwayLane underLane = LaneOnAxis(kv.Key, !bridgeVertical, lane, laneOf, allMasks);
                         bool bridgeArrow = bridgeLane.Active && ShouldDrawStraightArrow(kv.Key, bridgeLane, laneOf);
                         bool underArrow = underLane.Active && ShouldDrawStraightArrow(kv.Key, underLane, laneOf);
                         AppendCell(layers, c, kv.Value, type, cellSize, cellSize * widthFraction,
@@ -148,8 +150,42 @@ namespace CityGame.CellRoads
             }
             // Обрабатываем замкнутые контуры, у которых нет начала.
             foreach (Vector2Int cell in all)
-                if (!visited.Contains(cell))
-                    AppendStandaloneRoute(layers, TraceStandaloneRoute(cell, laneOf, masks, visited), laneOf, masks, cellSize);
+            {
+                if (visited.Contains(cell)) continue;
+                List<Vector2Int> loop = TraceStandaloneRoute(cell, laneOf, masks, visited);
+                CloseLoop(loop, laneOf, masks);
+                AppendStandaloneRoute(layers, loop, laneOf, masks, cellSize);
+            }
+        }
+
+        /// <summary>
+        /// Замкнутое кольцо: маршрут возвращается в свою первую клетку. Без этого между последней и первой
+        /// клеткой оставался разрыв с круглыми торцами. Начинаем кольцо с прямой клетки, чтобы шов не лёг на поворот,
+        /// и повторяем первую клетку в конце.
+        /// </summary>
+        static void CloseLoop(List<Vector2Int> route, Func<Vector2Int, HighwayLane> laneOf,
+            Dictionary<Vector2Int, int> masks)
+        {
+            if (route == null || route.Count < 4) return;
+            Vector2Int last = route[route.Count - 1];
+            HighwayLane lastLane = laneOf(last);
+            if (!lastLane.Active || last + Side.Vec(lastLane.Heading) != route[0]) return;
+            if (!masks.TryGetValue(last, out int lastMask) || (lastMask & lastLane.Heading) == 0 ||
+                !masks.TryGetValue(route[0], out int firstMask) || (firstMask & Side.Opposite(lastLane.Heading)) == 0) return;
+
+            for (int k = 0; k < route.Count; k++)
+            {
+                int m = masks[route[k]];
+                if (m != (Side.N | Side.S) && m != (Side.E | Side.W)) continue;
+                if (k > 0)
+                {
+                    route.AddRange(route.GetRange(0, k));
+                    route.RemoveRange(0, k);
+                }
+                break;
+            }
+
+            route.Add(route[0]);
         }
 
         static bool HasStandalonePredecessor(Vector2Int cell, Func<Vector2Int, HighwayLane> laneOf,
@@ -159,9 +195,10 @@ namespace CityGame.CellRoads
             {
                 Vector2Int neighbor = cell + Side.Vec(side);
                 HighwayLane prior = laneOf(neighbor);
+                // Сосед лежит со стороны side: его связь с нами это Opposite(side), наша связь с ним это side.
                 if (!prior.Active || !prior.Standalone || prior.Heading != Side.Opposite(side) ||
-                    !masks.TryGetValue(neighbor, out int priorMask) || (priorMask & side) == 0 ||
-                    !masks.TryGetValue(cell, out int cellMask) || (cellMask & Side.Opposite(side)) == 0) continue;
+                    !masks.TryGetValue(neighbor, out int priorMask) || (priorMask & Side.Opposite(side)) == 0 ||
+                    !masks.TryGetValue(cell, out int cellMask) || (cellMask & side) == 0) continue;
                 return true;
             }
             return false;
@@ -182,13 +219,31 @@ namespace CityGame.CellRoads
                 route.Add(current);
                 visited.Add(current);
                 Vector2Int next = current + Side.Vec(lane.Heading);
-                HighwayLane nextLane = laneOf(next);
                 int link = lane.Heading;
-                if (!nextLane.Active || !nextLane.Standalone || nextLane.OneWay != oneWayRoute ||
-                    !masks.TryGetValue(current, out int currentMask) || (currentMask & link) == 0 ||
+                if (!masks.TryGetValue(current, out int currentMask) || (currentMask & link) == 0 ||
                     !masks.TryGetValue(next, out int nextMask) || (nextMask & Side.Opposite(link)) == 0) break;
+                // Мост через чужую полосу: маршрут доходит до центра клетки моста и там обрывается.
+                // Сам мост рисует AppendOverpass, а за ним маршрут начинается заново.
+                if (IsBridgeCellFor(next, link, laneOf, masks))
+                {
+                    route.Add(next);
+                    break;
+                }
+                HighwayLane nextLane = laneOf(next);
+                if (!nextLane.Active || !nextLane.Standalone || nextLane.OneWay != oneWayRoute) break;
                 current = next;
             }
+
+            // Маршрут, начавшийся сразу за мостом, стартует с центра клетки моста, чтобы не оставлять щель.
+            if (route.Count > 0)
+            {
+                HighwayLane first = laneOf(route[0]);
+                Vector2Int before = route[0] - Side.Vec(first.Heading);
+                if (IsBridgeCellFor(before, first.Heading, laneOf, masks) &&
+                    masks.TryGetValue(route[0], out int firstMask) && (firstMask & Side.Opposite(first.Heading)) != 0)
+                    route.Insert(0, before);
+            }
+
             return route;
         }
 
@@ -196,6 +251,30 @@ namespace CityGame.CellRoads
             Func<Vector2Int, HighwayLane> laneOf, Dictionary<Vector2Int, int> masks, float cellSize)
         {
             if (route == null || route.Count < 2) return;
+
+            // Полоса и признак развилки по клеткам маршрута. Концевая клетка моста принадлежит чужой дороге,
+            // поэтому для неё берём полосу соседней клетки маршрута и не считаем её развилкой.
+            int last = route.Count - 1;
+            var routeLane = new HighwayLane[route.Count];
+            var routeJunction = new bool[route.Count];
+            for (int k = 0; k < route.Count; k++)
+            {
+                routeLane[k] = laneOf(route[k]);
+                routeJunction[k] = masks.TryGetValue(route[k], out int rm) && Side.Count(rm) > 2;
+            }
+
+            if (IsBridgeCellFor(route[0], Side.FromDelta(route[1] - route[0]), laneOf, masks))
+            {
+                routeLane[0] = routeLane[1];
+                routeJunction[0] = false;
+            }
+
+            if (IsBridgeCellFor(route[last], Side.FromDelta(route[last] - route[last - 1]), laneOf, masks))
+            {
+                routeLane[last] = routeLane[last - 1];
+                routeJunction[last] = false;
+            }
+
             var points = new List<Vector2>(route.Count);
             for (int i = 0; i < route.Count; i++)
                 points.Add(new Vector2((route[i].x + 0.5f) * cellSize, (route[i].y + 0.5f) * cellSize));
@@ -242,7 +321,7 @@ namespace CityGame.CellRoads
             AppendCurveLine(curve, curveCells, cursor, points[points.Count - 1],
                 route.Count - 1, cellSize, steps);
 
-            bool oneWay = laneOf(route[0]).OneWay;
+            bool oneWay = routeLane[0].OneWay;
             float halfWidth = oneWay ? cellSize * 0.25f : cellSize * HighwayHalfWidth;
             var normals = new Vector2[curve.Count];
             for (int i = 0; i < curve.Count; i++)
@@ -265,9 +344,8 @@ namespace CityGame.CellRoads
             bool hasMedian = false;
             for (int i = 0; i < curve.Count; i++)
             {
-                HighwayLane lane = laneOf(route[curveCells[i]]);
-                bool junction = masks.TryGetValue(route[curveCells[i]], out int routeMask) &&
-                    Side.Count(routeMask) > 2;
+                HighwayLane lane = routeLane[curveCells[i]];
+                bool junction = routeJunction[curveCells[i]];
                 float side = Vector2.Dot(Side.Vec(lane.PartnerSide), normals[i]) >= 0f ? 1f : -1f;
                 if (lane.Median && !oneWay)
                 {
@@ -302,8 +380,7 @@ namespace CityGame.CellRoads
             int arrowStart = route.Count <= 5 ? (curve.Count - 1) / 2 : Mathf.RoundToInt(3f * steps);
             for (int i = Mathf.Max(1, arrowStart); i < curve.Count - 1; i += arrowStep)
             {
-                if (masks.TryGetValue(route[curveCells[i]], out int arrowMask) && Side.Count(arrowMask) > 2)
-                    continue;
+                if (routeJunction[curveCells[i]]) continue;
                 AddHighwayArrow(layers.Verts[RoadLayers.Marking], layers.Tris[RoadLayers.Marking],
                     curve[i], (curve[i + 1] - curve[i - 1]).normalized, cellSize);
             }
@@ -338,18 +415,40 @@ namespace CityGame.CellRoads
             }
         }
 
+        /// <summary>
+        /// Полоса по оси клетки моста. Если собственная полоса клетки идёт по другой оси, ищем полосу вдоль
+        /// этой оси у соседей, проходя насквозь соседние клетки мостов (мост через двойное шоссе).
+        /// </summary>
         static HighwayLane LaneOnAxis(Vector2Int cell, bool vertical, HighwayLane current,
-            Func<Vector2Int, HighwayLane> laneOf)
+            Func<Vector2Int, HighwayLane> laneOf, Dictionary<Vector2Int, int> masks)
         {
             if (laneOf == null) return default;
             if (current.Active && IsOnAxis(current.Heading, vertical)) return current;
             int[] sides = vertical ? new[] { Side.N, Side.S } : new[] { Side.E, Side.W };
             foreach (int side in sides)
             {
-                HighwayLane candidate = laneOf(cell + Side.Vec(side));
-                if (candidate.Active && IsOnAxis(candidate.Heading, vertical)) return candidate;
+                Vector2Int c = cell;
+                for (int k = 0; k < 8; k++)
+                {
+                    c += Side.Vec(side);
+                    HighwayLane candidate = laneOf(c);
+                    if (candidate.Active && IsOnAxis(candidate.Heading, vertical)) return candidate;
+                    if (masks == null || !masks.TryGetValue(c, out int m) || Side.Count(m) != 4) break;
+                }
             }
             return default;
+        }
+
+        /// <summary>
+        /// Клетка чужого моста для маршрута, идущего вдоль стороны link: на ней сходятся четыре дороги,
+        /// а её собственная полоса идёт по другой оси.
+        /// </summary>
+        static bool IsBridgeCellFor(Vector2Int cell, int link, Func<Vector2Int, HighwayLane> laneOf,
+            Dictionary<Vector2Int, int> masks)
+        {
+            if (!masks.TryGetValue(cell, out int m) || Side.Count(m) != 4) return false;
+            HighwayLane lane = laneOf(cell);
+            return lane.Active && lane.Heading != link && lane.Heading != Side.Opposite(link);
         }
 
         static bool IsOnAxis(int direction, bool vertical)
