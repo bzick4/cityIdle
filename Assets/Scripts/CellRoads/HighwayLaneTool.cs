@@ -123,7 +123,11 @@ namespace CityGame.CellRoads
                 // Шоссе можно отвести в сторону от середины другого шоссе.
                 bool highwayCanBranch = !OneWayMode && startLane.Active && !startLane.OneWay &&
                                         Side.Count(_map.Mask(start)) == 2;
-                if (startLane.Active && !canExtendCurrentType && !oneWayCanJoinHighway && !highwayCanBranch)
+                // Съезд: от середины односторонней дороги можно пустить новую в свободную сторону.
+                bool oneWayCanBranch = OneWayMode && startLane.Active && startLane.OneWay &&
+                                       Side.Count(_map.Mask(start)) == 2;
+                if (startLane.Active && !canExtendCurrentType && !oneWayCanJoinHighway && !highwayCanBranch &&
+                    !oneWayCanBranch)
                 {
                     Message?.Invoke("Здесь уже проходит другой тип дороги");
                     return;
@@ -216,6 +220,14 @@ namespace CityGame.CellRoads
             HighwayLane lane = _map.LaneAt(to);
             int side = Side.FromDelta(to - from);
             if (side == 0) return false;
+            // Вторая односторонняя дорога навстречу первой от конца обычной дороги: общий участок
+            // и расхождение (развилка).
+            if (OneWayMode)
+            {
+                var probe = new List<Vector2Int>(_path) { to };
+                if (_map.IsForkPrefix(probe)) return true;
+            }
+
             HighwayLane fromLane = _map.LaneAt(from);
             int fromMask = _map.Mask(from);
 
@@ -249,7 +261,9 @@ namespace CityGame.CellRoads
             {
                 int toMask = _map.Mask(to);
                 if (Side.Count(toMask) == 1) return (toMask & Side.Opposite(side)) == 0; // конец: соединение
-                return _map.CanCross(to, side); // середина: только мост
+                // Середина: мост насквозь, либо въезд/съезд с свободной стороны (поворот и прямая).
+                return _map.CanCross(to, side) ||
+                       (Side.Count(toMask) == 2 && (toMask & Side.Opposite(side)) == 0);
             }
             // Шоссе: примыкаем к концу, к середине, к повороту (съезд) или проходим мостом. Заходим только с свободной стороны.
             if (lane.Active) return (_map.Mask(to) & Side.Opposite(side)) == 0;
@@ -269,7 +283,14 @@ namespace CityGame.CellRoads
             {
                 Vector2Int last = _path[_path.Count - 1];
                 HighwayLane lane = _map.LaneAt(last);
-                if (lane.Active && lane.OneWay && Side.Count(_map.Mask(last)) >= 2) _path.RemoveAt(_path.Count - 1);
+                bool dangling = lane.Active && lane.OneWay && Side.Count(_map.Mask(last)) >= 2;
+                if (dangling && Side.Count(_map.Mask(last)) == 2)
+                {
+                    // Отпустили палец на середине односторонней дороги с её свободной стороны: это въезд, не мост.
+                    int link = Side.FromDelta(_path[_path.Count - 2] - last);
+                    if (link != 0 && (_map.Mask(last) & link) == 0) break;
+                }
+                if (dangling) _path.RemoveAt(_path.Count - 1);
                 else break;
             }
         }
@@ -322,8 +343,11 @@ namespace CityGame.CellRoads
                     : _map.LaneAt(accepted[0]).Active && _map.LaneAt(accepted[accepted.Count - 1]).Active
                         ? "Эти концы не соединить: направления встречные. Веди от выезда одной полосы ко въезду другой"
                         : OneWayMode
-                            ? "Соединять можно выезд одной дороги с въездом другой. Чтобы пересечь дорогу мостом, веди прямо и дальше за неё"
+                            ? "Соединять можно выезд одной дороги с въездом другой. Чтобы пересечь дорогу мостом, веди прямо и дальше за неё. Развилка: от конца или начала обычной дороги проведи вторую полосу по той же дороге и разведи в сторону"
                             : "Соединять можно выезд одной полосы с въездом другой, либо примыкать сбоку к середине шоссе") :
+                _map.LastForkBuilt ? (_map.LastForkReversed
+                    ? "Развилка построена · вторая полоса идёт навстречу первой, общий участок стал обычной дорогой"
+                    : "Развилка построена · общий участок стал обычной двухполосной дорогой") :
                 _map.LastJoinFlipped ? "Концы соединены · направление одной из дорог развёрнуто, чтобы потоки сошлись" :
                 bridges > 0 ? (bridges == 1 ? "Построен мост" : "Построены мосты: " + bridges + " · дороги на пересечении не соединены") :
                 trimmed ? "Мост нужно довести до конца: отпусти палец за пересекаемой дорогой" :

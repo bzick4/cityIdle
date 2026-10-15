@@ -391,6 +391,7 @@ namespace CityGame.CellRoads
 
         public bool SetHighwayPath(IReadOnlyList<Vector2Int> path, bool standalone = true)
         {
+            LastForkBuilt = false;
             var snapshot = new Dictionary<Vector2Int, int>(_highwayDirections);
             if (BuildHighwayPath(path, standalone)) return true;
             RestoreDirections(snapshot); // разворот встречной дороги не должен остаться при неудаче
@@ -523,6 +524,9 @@ namespace CityGame.CellRoads
         /// </summary>
         public bool SetOneWayPath(IReadOnlyList<Vector2Int> path)
         {
+            LastForkBuilt = false;
+            LastForkReversed = false;
+            if (TryBuildFork(path) || TryOverlapRegular(path)) return true;
             var snapshot = new Dictionary<Vector2Int, int>(_highwayDirections);
             if (BuildOneWayPath(path)) return true;
             RestoreDirections(snapshot);
@@ -544,8 +548,9 @@ namespace CityGame.CellRoads
             int routeSign = 0;
             HighwayLane firstLane = LaneAt(path[0]);
             HighwayLane lastLane = LaneAt(path[path.Count - 1]);
-            bool extendFromFirst = firstLane.Active && firstLane.OneWay;
-            bool extendFromLast = lastLane.Active && lastLane.OneWay;
+            // Свободный конец односторонней дороги продолжаем; к середине (повороту или прямой) только присоединяемся.
+            bool extendFromFirst = firstLane.Active && firstLane.OneWay && Side.Count(Mask(path[0])) == 1;
+            bool extendFromLast = lastLane.Active && lastLane.OneWay && Side.Count(Mask(path[path.Count - 1])) == 1;
             if (extendFromFirst)
             {
                 int mask = Mask(path[0]);
@@ -579,7 +584,18 @@ namespace CityGame.CellRoads
                 if (lane.Active && lane.OneWay)
                 {
                     if (i != 0 && i != path.Count - 1) return false;
-                    if (Side.Count(Mask(path[i])) != 1) return false;
+                    int laneLinks = Side.Count(Mask(path[i]));
+                    if (laneLinks == 2)
+                    {
+                        // Въезд или съезд: присоединяемся к середине односторонней дороги с её свободной стороны.
+                        int link = i == 0
+                            ? Side.FromDelta(path[1] - path[0])
+                            : Side.FromDelta(path[i - 1] - path[i]);
+                        if (link == 0 || (Mask(path[i]) & link) != 0) return false;
+                        preserveDirection[i] = true;
+                        continue;
+                    }
+                    if (laneLinks != 1) return false;
                     continue;
                 }
                 // Шоссе в середине пути можно только пересечь мостом (прямо, поперёк полосы).
@@ -633,6 +649,268 @@ namespace CityGame.CellRoads
                 _rampCells.Add(path[i]);
             }
 
+            Changed?.Invoke();
+            return true;
+        }
+
+        // ---------- Развилка: две односторонние дороги из конца обычной дороги ----------
+
+        /// <summary>Последний построенный путь был развилкой из двух односторонних дорог.</summary>
+        public bool LastForkBuilt { get; private set; }
+
+        /// <summary>Последняя развилка построена с разворотом: новая полоса пошла к корню, а не от него.</summary>
+        public bool LastForkReversed { get; private set; }
+
+        /// <summary>
+        /// Корень развилки: клетка обычной дороги (конец дороги, её начало или перекрёсток),
+        /// от которой отходит односторонняя дорога.
+        /// </summary>
+        bool IsForkRoot(Vector2Int cell)
+        {
+            return _masks.ContainsKey(cell) && !LaneAt(cell).Active && TypeAt(cell) == JunctionType.Plain;
+        }
+
+        /// <summary>Клетка обычной односторонней дороги без ответвлений (одна или две связи).</summary>
+        bool IsChainCell(Vector2Int cell)
+        {
+            if (!_masks.TryGetValue(cell, out int m)) return false;
+            int count = Side.Count(m);
+            if (count < 1 || count > 2 || TypeAt(cell) != JunctionType.Plain) return false;
+            HighwayLane lane = LaneAt(cell);
+            return lane.Active && lane.OneWay && lane.Manual;
+        }
+
+        /// <summary>
+        /// Односторонняя дорога, выходящая из корня root в сторону side: клетки от первой после корня и дальше.
+        /// outward: движение по ней идёт от корня (иначе к нему).
+        /// </summary>
+        List<Vector2Int> ChainFrom(Vector2Int root, int side, out bool outward)
+        {
+            outward = false;
+            if (side == 0 || !IsForkRoot(root) || (Mask(root) & side) == 0) return null;
+            Vector2Int first = root + Side.Vec(side);
+            if (!IsChainCell(first) || (Mask(first) & Side.Opposite(side)) == 0) return null;
+            outward = LaneAt(first).Heading != Side.Opposite(side);
+            var chain = new List<Vector2Int> { first };
+            Vector2Int cur = first;
+            int back = Side.Opposite(side);
+            for (int guard = 0; guard < 64; guard++)
+            {
+                int fwd = Mask(cur) & ~back;
+                if (Side.Count(fwd) != 1) break;
+                Vector2Int next = cur + Side.Vec(fwd);
+                if (!IsChainCell(next) || (Mask(next) & Side.Opposite(fwd)) == 0 || chain.Contains(next)) break;
+                chain.Add(next);
+                cur = next;
+                back = Side.Opposite(fwd);
+            }
+            return chain;
+        }
+
+        /// <summary>
+        /// Идём по односторонней дороге из клетки z в сторону firstSide до корня развилки.
+        /// Возвращает клетки от z до корня включительно.
+        /// </summary>
+        List<Vector2Int> ChainToRoot(Vector2Int z, int firstSide, out bool outward)
+        {
+            outward = false;
+            if (!IsChainCell(z) || (Mask(z) & firstSide) == 0) return null;
+            var list = new List<Vector2Int> { z };
+            Vector2Int cur = z;
+            int side = firstSide;
+            for (int guard = 0; guard < 64; guard++)
+            {
+                Vector2Int next = cur + Side.Vec(side);
+                if (!_masks.ContainsKey(next)) return null;
+                if (IsChainCell(next))
+                {
+                    if ((Mask(next) & Side.Opposite(side)) == 0 || list.Contains(next)) return null;
+                    int fwd = Mask(next) & ~Side.Opposite(side);
+                    list.Add(next);
+                    if (Side.Count(fwd) != 1) return null;
+                    cur = next;
+                    side = fwd;
+                    continue;
+                }
+                if (!IsForkRoot(next) || (Mask(next) & Side.Opposite(side)) == 0) return null;
+                outward = LaneAt(cur).Heading != side;
+                list.Add(next);
+                return list;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Маршрут cells (возможно, ещё не законченный) выглядит как развилка: он идёт по готовой односторонней дороге
+        /// от корня или к корню и расходится с ней по свободным клеткам. Нужен инструменту, чтобы разрешить шаг на чужую полосу.
+        /// </summary>
+        public bool IsForkPrefix(IReadOnlyList<Vector2Int> cells)
+        {
+            int n = cells.Count;
+            if (n < 2) return false;
+
+            // Маршрут начинается в корне и идёт по готовой дороге наружу.
+            int s0 = Side.FromDelta(cells[1] - cells[0]);
+            List<Vector2Int> chain = ChainFrom(cells[0], s0, out _);
+            if (chain != null)
+            {
+                int d = 1;
+                while (d < n && d - 1 < chain.Count && cells[d] == chain[d - 1]) d++;
+                bool freeRest = d > 1;
+                for (int j = d; j < n && freeRest; j++)
+                    if (_masks.ContainsKey(cells[j])) freeRest = false;
+                if (freeRest) return true;
+            }
+
+            // Маршрут целиком идёт по готовой дороге (две полосы в одной клетке).
+            if (OverlapCells(cells) != null) return true;
+
+            // Маршрут начинается на свободных клетках, встаёт на готовую дорогу и идёт по ней к корню.
+            int a = 0;
+            while (a < n && !_masks.ContainsKey(cells[a])) a++;
+            if (a >= 1 && a < n)
+            {
+                Vector2Int z = cells[a];
+                foreach (int s in Side.All)
+                {
+                    if ((Mask(z) & s) != 0) continue; // сторона, откуда пришли, должна быть свободной
+                    if (Side.FromDelta(cells[a - 1] - z) != s) continue;
+                    foreach (int t in Side.All)
+                    {
+                        if ((Mask(z) & t) == 0) continue;
+                        List<Vector2Int> walk = ChainToRoot(z, t, out bool outward);
+                        if (walk == null) continue;
+                        int len = Math.Min(n - a, walk.Count);
+                        bool match = true;
+                        for (int j = 0; j < len; j++)
+                            if (cells[a + j] != walk[j]) { match = false; break; }
+                        if (match) return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Вторая односторонняя дорога идёт по тем же клеткам, что и первая, от корня или к корню (обычной дороги).
+        /// Общий участок превращается в обычную двухполосную дорогу, а в клетке, где пути расходятся,
+        /// получается развилка: одна полоса уходит по одной дороге, другая приходит по другой.
+        /// Работает с обоими концами обычной дороги.
+        /// </summary>
+        bool TryBuildFork(IReadOnlyList<Vector2Int> path)
+        {
+            if (path == null || path.Count < 3) return false;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                var o = new List<Vector2Int>(path);
+                if (pass == 0) o.Reverse(); // o[0] — корень, дальше наружу; pass 0: палец шёл к корню
+                int rootSide = Side.FromDelta(o[1] - o[0]);
+                List<Vector2Int> chain = ChainFrom(o[0], rootSide, out bool existingOut);
+                if (chain == null) continue;
+                // Потоки на общем участке должны быть встречными. Если палец тянули от корня вдоль дороги,
+                // которая тоже идёт от корня, новая полоса получает встречное направление.
+                bool armFlowsOut = !existingOut;
+                if (pass == 0 && !existingOut) continue; // палец шёл к корню, а готовая дорога тоже к корню
+
+                int d = 1;
+                while (d < o.Count && d - 1 < chain.Count && o[d] == chain[d - 1]) d++;
+                if (d == 1 || d >= o.Count) continue; // нет общих клеток или нет ответвления
+
+                bool freeArm = true;
+                for (int j = d; j < o.Count; j++)
+                    if (_masks.ContainsKey(o[j])) { freeArm = false; break; }
+                if (!freeArm) continue;
+
+                Vector2Int z = o[d - 1];
+                int armSide = Side.FromDelta(o[d] - z);
+                if (armSide == 0 || (Mask(z) & armSide) != 0) continue;
+
+                // Общий участок, включая клетку расхождения, становится обычной двусторонней дорогой.
+                for (int j = 1; j < d; j++)
+                {
+                    _highwayDirections.Remove(o[j]);
+                    _rampCells.Remove(o[j]);
+                }
+
+                for (int j = d; j < o.Count; j++) _masks[o[j]] = 0;
+                for (int j = d - 1; j + 1 < o.Count; j++)
+                {
+                    int side = Side.FromDelta(o[j + 1] - o[j]);
+                    _masks[o[j]] |= side;
+                    _masks[o[j + 1]] |= Side.Opposite(side);
+                }
+
+                for (int j = d; j < o.Count; j++)
+                {
+                    int toInner = Side.FromDelta(o[j - 1] - o[j]);
+                    int toOuter = j + 1 < o.Count ? Side.FromDelta(o[j + 1] - o[j]) : Side.Opposite(toInner);
+                    _highwayDirections[o[j]] = armFlowsOut ? toOuter : toInner;
+                    _rampCells.Add(o[j]);
+                }
+
+                LastForkBuilt = true;
+                LastForkReversed = pass == 1 && !armFlowsOut;
+                Changed?.Invoke();
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Клетки готовой односторонней дороги, по которым идёт маршрут целиком (от корня, к корню или вдоль дороги к корню).
+        /// Null, если маршрут не лежит на такой дороге.
+        /// </summary>
+        List<Vector2Int> OverlapCells(IReadOnlyList<Vector2Int> path)
+        {
+            int n = path.Count;
+            if (n < 2) return null;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                var o = new List<Vector2Int>(path);
+                if (pass == 1) o.Reverse();
+                int side = Side.FromDelta(o[1] - o[0]);
+
+                // От корня наружу по готовой дороге.
+                List<Vector2Int> chain = ChainFrom(o[0], side, out _);
+                if (chain != null && n - 1 <= chain.Count)
+                {
+                    bool match = true;
+                    for (int j = 1; j < n && match; j++) match = o[j] == chain[j - 1];
+                    if (match) return new List<Vector2Int>(o.GetRange(1, n - 1));
+                }
+
+                // От клетки дороги к корню.
+                List<Vector2Int> walk = ChainToRoot(o[0], side, out _);
+                if (walk != null && n <= walk.Count)
+                {
+                    bool match = true;
+                    for (int j = 0; j < n && match; j++) match = o[j] == walk[j];
+                    if (match)
+                    {
+                        var cells = new List<Vector2Int>();
+                        foreach (Vector2Int c in o) if (IsChainCell(c)) cells.Add(c);
+                        return cells;
+                    }
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Вторая односторонняя дорога проложена целиком по клеткам первой от обычной дороги или к ней:
+        /// две полосы в одной клетке это обычная двухполосная дорога.
+        /// </summary>
+        bool TryOverlapRegular(IReadOnlyList<Vector2Int> path)
+        {
+            List<Vector2Int> cells = OverlapCells(path);
+            if (cells == null || cells.Count == 0) return false;
+            foreach (Vector2Int c in cells)
+            {
+                _highwayDirections.Remove(c);
+                _rampCells.Remove(c);
+            }
+
+            LastForkBuilt = true;
             Changed?.Invoke();
             return true;
         }
