@@ -208,18 +208,39 @@ namespace CityGame.Buildings
             return s;
         }
 
+        // internal static GUIStyle Label(int size, TextAnchor align, FontStyle fontStyle = FontStyle.Normal)
+        // {
+        //     var s = new GUIStyle(GUI.skin.label)
+        //     {
+        //         fontSize = size,
+        //         alignment = align,
+        //         fontStyle = fontStyle,
+        //         wordWrap = true
+        //     };
+        //     SetText(s, Color.black);
+        //     return s;
+        // }
+
         internal static GUIStyle Label(int size, TextAnchor align, FontStyle fontStyle = FontStyle.Normal)
-        {
-            var s = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = size,
-                alignment = align,
-                fontStyle = fontStyle,
-                wordWrap = true
-            };
-            SetText(s, Color.black);
-            return s;
-        }
+{
+    Font customFont = Resources.Load<Font>("Fonts/NotoSans-VariableFont_wdth,wght");
+    Debug.Log($"Custom font loaded: {customFont != null}");
+
+    var s = new GUIStyle(GUI.skin.label)
+    {
+         font = customFont,
+        fontSize = size,
+        alignment = align,
+        fontStyle = fontStyle,
+        wordWrap = true
+    };
+
+    if (customFont != null)
+        s.font = customFont;
+
+    SetText(s, Color.black);
+    return s;
+}
 
         void EnsureStyles()
         {
