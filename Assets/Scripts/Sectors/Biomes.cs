@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using CityGame.Buildings;
 using CityGame.CellRoads;
 using CityGame.Roads;
+using CityGame.Water;
 using UnityEngine;
 
 namespace CityGame.Sectors
@@ -19,6 +20,18 @@ namespace CityGame.Sectors
         readonly CellRoadMap _roads;
         readonly float _cell;
         readonly Dictionary<HexCoord, Vector2Int> _stats = new Dictionary<HexCoord, Vector2Int>();
+
+        /// <summary>Каналы. Задаются после создания через BindCanals.</summary>
+        public CanalMap Canals { get; private set; }
+
+        /// <summary>Клетка занята штучной постройкой (автостанция): дерево там не растёт.</summary>
+        public System.Func<Vector2Int, bool> Occupied;
+
+        /// <summary>Пересчитать деревья после изменения штучных построек.</summary>
+        public void Refresh()
+        {
+            Recompute();
+        }
 
         /// <summary>Деревья изменились: пора перерисовать.</summary>
         public event System.Action Changed;
@@ -53,9 +66,22 @@ namespace CityGame.Sectors
             return (BiomeMap.Mix(cell.x, cell.y, Map.Seed + 5) & 0xFFFF) / 65535f < BiomeSpecs.TreeDensity;
         }
 
+        public void BindCanals(CanalMap canals)
+        {
+            if (Canals != null) Canals.Changed -= Recompute;
+            Canals = canals;
+            if (Canals != null) Canals.Changed += Recompute;
+            Recompute();
+        }
+
+        bool IsCanal(Vector2Int cell)
+        {
+            return (Canals != null && Canals.Has(cell)) || (Occupied != null && Occupied(cell));
+        }
+
         public bool HasTree(Vector2Int cell)
         {
-            return NaturalTree(cell) && !_model.HasCell(cell) && !_roads.Has(cell);
+            return NaturalTree(cell) && !_model.HasCell(cell) && !_roads.Has(cell) && !IsCanal(cell);
         }
 
         public bool CanBuild(Vector2Int cell)
@@ -68,10 +94,16 @@ namespace CityGame.Sectors
             return BiomeAt(cell) == Biome.Sea;
         }
 
+        /// <summary>Вода: море или канал. Здесь дорога становится мостом, а порт можно поставить.</summary>
+        public bool IsWater(Vector2Int cell)
+        {
+            return (Canals != null && Canals.Has(cell)) || IsSea(cell);
+        }
+
         /// <summary>Множитель цены клетки дороги: на море это мост.</summary>
         public float RoadCostFactor(Vector2Int cell)
         {
-            return BiomeSpecs.RoadCostFactor(BiomeAt(cell));
+            return Canals != null && Canals.Has(cell) ? BiomeSpecs.SeaCostFactor : BiomeSpecs.RoadCostFactor(BiomeAt(cell));
         }
 
         public float CostFactor(Vector2Int cell)
@@ -118,7 +150,7 @@ namespace CityGame.Sectors
                     var cell = new Vector2Int(ix, iy);
                     if (_sectors.SectorAt(CenterOf(cell)) != h || !NaturalTree(cell)) continue;
                     total++;
-                    if (!_model.HasCell(cell) && !_roads.Has(cell)) left++;
+                    if (!_model.HasCell(cell) && !_roads.Has(cell) && !IsCanal(cell)) left++;
                 }
 
                 _stats[h] = new Vector2Int(total, left);

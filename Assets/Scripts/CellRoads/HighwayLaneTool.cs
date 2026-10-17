@@ -26,6 +26,9 @@ namespace CityGame.CellRoads
         SectorMap _sectors;
         Economy _economy;
         public Func<Vector2Int, float> CostFactorAt;
+
+        /// <summary>Клетка занята чем-то кроме зданий (например, портом): дорогу не провести.</summary>
+        public Func<Vector2Int, bool> IsOccupied;
         readonly List<Vector2Int> _path = new List<Vector2Int>();
         bool _drawing;
         bool _axisKnown;
@@ -44,6 +47,7 @@ namespace CityGame.CellRoads
         bool Allowed(Vector2Int cell)
         {
             if (_city != null && _city.HasCell(cell)) return false;
+            if (IsOccupied != null && IsOccupied(cell)) return false;
             if (_map.Has(cell)) return true;
             Vector2 center = new Vector2((cell.x + 0.5f) * CellSize, (cell.y + 0.5f) * CellSize);
             return _sectors == null || _sectors.IsOpenAt(center);

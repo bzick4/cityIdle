@@ -5,6 +5,9 @@ using System.Collections.Generic;
 using CityGame.Roads;
 using CityGame.Save;
 using CityGame.Sectors;
+using CityGame.Transit;
+using CityGame.Water;
+using CityGame.World;
 using UnityEngine;
 
 namespace CityGame.Buildings
@@ -21,7 +24,10 @@ namespace CityGame.Buildings
         Industrial,
         Service,
         Erase,
-        Expand
+        Expand,
+        Canal,
+        Port,
+        Bus
     }
 
     /// <summary>
@@ -54,6 +60,16 @@ namespace CityGame.Buildings
         public ServiceCoverage Coverage { get; private set; }
         public ServiceOverlay ServiceZones { get; private set; }
         public CarSystem Traffic { get; private set; }
+        public CanalMap Canals { get; private set; }
+        public PortMap Ports { get; private set; }
+        public BusMap BusStations { get; private set; }
+        public BusStationPlacer BusTool { get; private set; }
+        public BusSystem Buses { get; private set; }
+        public CanalDrawer CanalTool { get; private set; }
+        public PortPlacer PortTool { get; private set; }
+        public ShipSystem Ships { get; private set; }
+        public DayNight Day { get; private set; }
+        public NightLights Lights { get; private set; }
         public ServiceKind CurrentService { get; private set; } = ServiceKind.Ambulance;
         public RoadGraph RoadNetwork { get; private set; }
         public Tool CurrentTool { get; private set; } = Tool.Pan;
@@ -189,6 +205,11 @@ namespace CityGame.Buildings
                     x = c.Pos.x, y = c.Pos.y, category = (int)c.Category, kind = (int)c.Kind, serial = c.Serial
                 });
 
+            foreach (Vector2Int c in Canals.Cells) data.canals.Add(new CellSave { x = c.x, y = c.y });
+            foreach (Vector2Int c in Ports.Cells) data.ports.Add(new CellSave { x = c.x, y = c.y });
+            foreach (Vector2Int c in BusStations.Cells) data.buses.Add(new CellSave { x = c.x, y = c.y });
+            data.dayHour = Day != null ? Day.Hour : -1f;
+
             return data;
         }
 
@@ -232,6 +253,20 @@ namespace CityGame.Buildings
                     { Serial = b.serial });
             Model.Load(cells);
 
+            var canalCells = new List<Vector2Int>();
+            if (data.canals != null)
+                foreach (CellSave c in data.canals) canalCells.Add(new Vector2Int(c.x, c.y));
+            Canals.Load(canalCells);
+            var portCells = new List<Vector2Int>();
+            if (data.ports != null)
+                foreach (CellSave c in data.ports) portCells.Add(new Vector2Int(c.x, c.y));
+            Ports.Load(portCells);
+            var busCells = new List<Vector2Int>();
+            if (data.buses != null)
+                foreach (CellSave c in data.buses) busCells.Add(new Vector2Int(c.x, c.y));
+            BusStations.Load(busCells);
+            if (data.dayHour >= 0f) Day.SetHour(data.dayHour);
+
             Economy.Money = data.money;
             if (data.camWidth > 0f) Rig.SetView(new Vector2(data.camX, data.camY), data.camWidth);
         }
@@ -268,6 +303,13 @@ namespace CityGame.Buildings
             _biomeMap = new BiomeMap { Seed = seed };
             if (data == null) Sectors.OpenRandomStartingNeighbors(seed, 2);
             Biomes = new Biomes(_biomeMap, Sectors, Model, RoadMap, CellSize);
+            Canals = new CanalMap();
+            Ports = new PortMap();
+            BusStations = new BusMap();
+            Biomes.Occupied = BusStations.Has;
+            BusStations.Changed += Biomes.Refresh;
+            Biomes.BindCanals(Canals);
+            Day = GetOrAdd<DayNight>();
 
             Coverage = new ServiceCoverage(Model);
             Economy = GetOrAdd<Economy>();
@@ -296,15 +338,44 @@ namespace CityGame.Buildings
             Placer.CellSize = CellSize;
             Placer.Bind(Model, Economy, RoadMap, Biomes);
             Placer.CanPlaceAt = Sectors.IsOpenAt;
+            Placer.Ports = Ports;
+            Placer.Buses = BusStations;
+            Placer.Canals = Canals;
+
+            var canalRenderer = GetOrAdd<CanalRenderer>();
+            canalRenderer.CellSize = CellSize;
+            canalRenderer.Bind(Canals, Biomes);
+            var busRenderer = GetOrAdd<BusStationRenderer>();
+            busRenderer.CellSize = CellSize;
+            busRenderer.Bind(BusStations, RoadMap);
+            var portRenderer = GetOrAdd<PortRenderer>();
+            portRenderer.CellSize = CellSize;
+            portRenderer.Bind(Ports);
+
+            CanalTool = GetOrAdd<CanalDrawer>();
+            CanalTool.CellSize = CellSize;
+            CanalTool.Bind(Canals, Ports, Model, Sectors, Biomes, Economy);
+            CanalTool.IsOccupied = BusStations.Has;
+            PortTool = GetOrAdd<PortPlacer>();
+            PortTool.CellSize = CellSize;
+            PortTool.Bind(Ports, Model, RoadMap, Sectors, Biomes, Economy);
+            BusTool = GetOrAdd<BusStationPlacer>();
+            BusTool.CellSize = CellSize;
+            BusTool.Bind(BusStations, Ports, Canals, Model, RoadMap, Sectors, Biomes, Economy);
 
             RoadDrawer = GetOrAdd<CellRoadDrawer>();
             RoadDrawer.CellSize = CellSize;
             RoadDrawer.Bind(RoadMap, Model, Sectors, Economy);
             RoadDrawer.CostFactorAt = Biomes.RoadCostFactor;
+            RoadDrawer.IsOccupied = c => Ports.Has(c) || BusStations.Has(c);
             HighwayTool = GetOrAdd<HighwayLaneTool>();
             HighwayTool.CellSize = CellSize;
             HighwayTool.Bind(RoadMap, Model, Sectors, Economy);
             HighwayTool.CostFactorAt = Biomes.RoadCostFactor;
+            HighwayTool.IsOccupied = c => Ports.Has(c) || BusStations.Has(c);
+            var tunnels = GetOrAdd<TunnelRenderer>();
+            tunnels.CellSize = CellSize;
+            tunnels.Bind(RoadMap, Biomes);
             var bridges = GetOrAdd<BridgeRenderer>();
             bridges.CellSize = CellSize;
             bridges.Bind(RoadMap, Biomes);
@@ -324,7 +395,21 @@ namespace CityGame.Buildings
 
             Traffic = GetOrAdd<CarSystem>();
             Traffic.CellSize = CellSize;
+            Traffic.Day = Day;
             Traffic.Bind(Flow, RoadNetwork, RoadMap, Model);
+
+            Ships = GetOrAdd<ShipSystem>();
+            Ships.CellSize = CellSize;
+            Ships.Bind(Ports, Canals, Biomes, Sectors, Model, Day);
+            Buses = GetOrAdd<BusSystem>();
+            Buses.CellSize = CellSize;
+            Buses.Bind(BusStations, RoadMap, Day);
+            Economy.ExtraIncome = () => Ships.IncomePerSecond + Buses.IncomePerSecond;
+            Lights = GetOrAdd<NightLights>();
+            Lights.CellSize = CellSize;
+            Lights.Biomes = Biomes;
+            Lights.Bind(RoadMap, Model, Ports, Day);
+            Lights.SetBuses(BusStations);
             Heatmap = GetOrAdd<FlowHeatmap>();
             Heatmap.Bind(Flow, RoadNetwork);
 
@@ -340,6 +425,9 @@ namespace CityGame.Buildings
             Placer.IsPointerBlocked = _hud.IsPointerBlocked;
             JunctionTool.IsPointerBlocked = _hud.IsPointerBlocked;
             Tapper.IsPointerBlocked = _hud.IsPointerBlocked;
+            CanalTool.IsPointerBlocked = _hud.IsPointerBlocked;
+            PortTool.IsPointerBlocked = _hud.IsPointerBlocked;
+            BusTool.IsPointerBlocked = _hud.IsPointerBlocked;
             Rig.IsPointerBlocked = _hud.IsPointerBlocked;
 
             Started = true;
@@ -377,6 +465,9 @@ namespace CityGame.Buildings
             JunctionTool.enabled = tool == Tool.Junction;
             Placer.enabled = build;
             Tapper.enabled = tool == Tool.Expand;
+            CanalTool.enabled = tool == Tool.Canal;
+            PortTool.enabled = tool == Tool.Port;
+            BusTool.enabled = tool == Tool.Bus;
             Rig.PanEnabled = tool == Tool.Pan;
 
             ServiceZones.Emphasis = tool == Tool.Service;

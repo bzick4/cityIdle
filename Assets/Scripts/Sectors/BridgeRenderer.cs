@@ -54,7 +54,7 @@ namespace CityGame.Sectors
             {
                 foreach (var kv in _map.Cells)
                 {
-                    if (!_biomes.IsSea(kv.Key)) continue;
+                    if (!_biomes.IsWater(kv.Key)) continue;
                     Vector2 c = new Vector2((kv.Key.x + 0.5f) * cs, (kv.Key.y + 0.5f) * cs);
                     int mask = kv.Value;
 

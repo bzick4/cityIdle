@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using CityGame.CellRoads;
 using CityGame.Roads;
 using CityGame.Sectors;
+using CityGame.Transit;
+using CityGame.Water;
 using UnityEngine;
 
 namespace CityGame.Buildings
@@ -28,6 +30,9 @@ namespace CityGame.Buildings
         public event Action<Vector2Int> PlaceFailedNoMoney;
         public event Action<string> Message;
         Biomes _biomes;
+        public PortMap Ports;
+        public BusMap Buses;
+        public CanalMap Canals;
 
         CityModel _model;
         Economy _economy;
@@ -118,20 +123,44 @@ namespace CityGame.Buildings
         {
             if (EraseMode)
             {
+                if (Ports != null && Ports.Has(cell))
+                {
+                    Ports.Remove(cell);
+                    return;
+                }
+
+                if (Buses != null && Buses.Has(cell))
+                {
+                    Buses.Remove(cell);
+                    return;
+                }
+
                 if (_model.Get(cell) != null)
                 {
                     PendingEraseCell = cell;
                     _painting = false;
                     return;
                 }
-                if (_roads.Has(cell) && !_roads.Remove(cell))
-                    Message?.Invoke("Не удалось удалить этот участок дороги");
+                if (_roads.Has(cell))
+                {
+                    if (!_roads.Remove(cell)) Message?.Invoke("Не удалось удалить этот участок дороги");
+                    return;
+                }
+
+                if (Canals != null && Canals.Has(cell)) Canals.Remove(cell);
                 return;
             }
 
             if (_model.HasCell(cell)) return;
             if (CanPlaceAt != null && !CanPlaceAt(CellCenter(cell))) return;
             if (BlockedByRoad(cell)) return;
+            if (Ports != null && Ports.Has(cell)) return;
+            if (Buses != null && Buses.Has(cell)) return;
+            if (Canals != null && Canals.Has(cell))
+            {
+                Message?.Invoke("На канале можно строить только порт");
+                return;
+            }
 
             if (_biomes != null && !_biomes.CanBuild(cell))
             {

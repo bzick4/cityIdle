@@ -9,6 +9,7 @@ namespace CityGame.Save
     [Serializable] public class HighwayCellSave { public int x, y, heading, kind, originalMask; }
     [Serializable] public class BuildingSave { public int x, y, category, kind, serial; }
     [Serializable] public class HexSave { public int q, r; }
+    [Serializable] public class CellSave { public int x, y; }
 
     /// <summary>Всё, что нужно для восстановления города. Деревья, машины и довольство считаются заново.</summary>
     [Serializable]
@@ -22,6 +23,11 @@ namespace CityGame.Save
         public List<RoadCellSave> roads = new List<RoadCellSave>();
         public List<HighwayCellSave> highway = new List<HighwayCellSave>();
         public List<BuildingSave> buildings = new List<BuildingSave>();
+        public List<CellSave> canals = new List<CellSave>();
+        public List<CellSave> ports = new List<CellSave>();
+        public List<CellSave> buses = new List<CellSave>();
+        /// <summary>Час суток 0..24. Меньше нуля: в старых сохранениях нет, берём час старта.</summary>
+        public float dayHour = -1f;
     }
 
     /// <summary>Файл сохранения в папке данных приложения. Одно сохранение: новая игра его перезаписывает.</summary>

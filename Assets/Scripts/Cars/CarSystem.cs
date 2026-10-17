@@ -9,8 +9,8 @@ using UnityEngine;
 namespace CityGame.Cars
 {
     /// <summary>
-    /// Парк машин. Каждый жилой блок даёт от 0.4 до 1 машины, значения копятся: машина появляется на карте,
-    /// когда накопленная сумма достигает очередного целого. Первый жилой блок всегда даёт целую машину.
+    /// Парк машин. Каждый жилой блок даёт от 0.2 до 0.6 машины, значения копятся: машина появляется на карте,
+    /// когда накопленная сумма достигает очередного целого. Первые три жилых блока дают по целой машине.
     /// Машина живёт в городе постоянно: стоит у дома, едет в торговую или промышленную цель, пережидает там,
     /// возвращается домой. Если под ней перестроили дороги, она ищет путь заново от своей точки и не исчезает.
     /// На въезд в ребро и в развилку нужен «талон»: интервал равен 1 / (пропускная способность × CarsPerFlow),
@@ -29,8 +29,10 @@ namespace CityGame.Cars
 
         [Header("Парк")]
         [Tooltip("Сколько машин даёт один жилой блок: от и до")]
-        public float ContributionMin = 0.4f;
-        public float ContributionMax = 1f;
+        public float ContributionMin = 0.2f;
+        public float ContributionMax = 0.6f;
+        [Tooltip("Первые столько жилых блоков дают по целой машине")]
+        public int FreeCars = 3;
         [Tooltip("Сколько стоит дома между поездками, секунд: от и до")]
         public Vector2 ParkSeconds = new Vector2(2f, 6f);
         [Tooltip("Сколько стоит у цели, секунд: от и до")]
@@ -94,7 +96,11 @@ namespace CityGame.Cars
         readonly Dictionary<int, float> _nodeNext = new Dictionary<int, float>();
         readonly MeshBatch _lowBatch = new MeshBatch();
         readonly MeshBatch _highBatch = new MeshBatch();
-        MeshRenderer _low, _high;
+        readonly MeshBatch _lightBatch = new MeshBatch();
+        MeshRenderer _low, _high, _lights;
+
+        /// <summary>Время суток. Ночью у машин горят фары.</summary>
+        public CityGame.World.DayNight Day;
         bool _visible = true;
         float _now;
         int _rotate;
@@ -175,8 +181,8 @@ namespace CityGame.Cars
             float sum = 0f;
             for (int i = 0; i < residents.Count; i++)
             {
-                // Первый блок даёт машину сразу, остальные копят случайную долю.
-                sum += i == 0 ? 1f : Contribution(residents[i].Pos);
+                // Первые блоки дают машину сразу, остальные копят случайную долю.
+                sum += i < FreeCars ? 1f : Contribution(residents[i].Pos);
                 while (homes.Count < Mathf.FloorToInt(sum + 1e-4f)) homes.Add(residents[i].Pos);
             }
 
@@ -554,7 +560,10 @@ namespace CityGame.Cars
         {
             _lowBatch.Clear();
             _highBatch.Clear();
+            _lightBatch.Clear();
             if (_low == null) return;
+
+            bool lit = Day != null && Day.LightLevel > 0.02f;
 
             float ease = 1f - Mathf.Exp(-16f * dt);
             Color window = new Color(0.12f, 0.14f, 0.18f, 0.9f);
@@ -624,10 +633,36 @@ namespace CityGame.Cars
                     m.Local(car.Pos, f, r, -hl, -hl * 0.65f, -hw, -hw * 0.45f, brake);
                     m.Local(car.Pos, f, r, -hl, -hl * 0.65f, hw * 0.45f, hw, brake);
                 }
+
+                if (lit)
+                {
+                    // Фары: два тёплых пятна впереди и красные огни сзади.
+                    Color beam = new Color(1f, 0.95f, 0.72f, 0.5f);
+                    CityGame.World.LightMesh.Glow(_lightBatch, car.Pos + f * (hl + CellSize * 0.1f) + r * (hw * 0.55f),
+                        CellSize * 0.2f, beam, 8);
+                    CityGame.World.LightMesh.Glow(_lightBatch, car.Pos + f * (hl + CellSize * 0.1f) - r * (hw * 0.55f),
+                        CellSize * 0.2f, beam, 8);
+                    CityGame.World.LightMesh.Glow(_lightBatch, car.Pos - f * hl, CellSize * 0.1f,
+                        new Color(1f, 0.2f, 0.15f, car.Braking ? 0.9f : 0.45f), 6);
+                }
             }
 
             _low.GetComponent<MeshFilter>().sharedMesh = _lowBatch.ToMesh(_low.GetComponent<MeshFilter>().sharedMesh);
             _high.GetComponent<MeshFilter>().sharedMesh = _highBatch.ToMesh(_high.GetComponent<MeshFilter>().sharedMesh);
+
+            if (Day == null) return;
+            if (_lights == null)
+            {
+                var go = new GameObject("Car lights");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<MeshFilter>().sharedMesh = new Mesh { name = "Car lights" };
+                _lights = go.AddComponent<MeshRenderer>();
+                _lights.sharedMaterial = Day.LightMaterial;
+                _lights.sortingOrder = CityGame.World.DayNight.LightOrder;
+            }
+
+            _lights.enabled = _visible && lit;
+            if (lit) _lights.GetComponent<MeshFilter>().sharedMesh = _lightBatch.ToMesh(_lights.GetComponent<MeshFilter>().sharedMesh);
         }
     }
 }

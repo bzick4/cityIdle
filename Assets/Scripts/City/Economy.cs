@@ -33,6 +33,16 @@ namespace CityGame.Buildings
         public float HighwayRoundaboutCost = 140f;
         public float OverpassCost = 100f;
 
+        [Tooltip("Цена одной новой клетки канала. Море бесплатно: там уже вода")]
+        public float CanalCostPerCell = 8f;
+        [Tooltip("Цена порта")]
+        public float PortCost = 400f;
+        [Tooltip("Цена автостанции")]
+        public float BusStationCost = 250f;
+
+        /// <summary>Доход, который не считается по районам (порты и корабли), в секунду.</summary>
+        public Func<float> ExtraIncome;
+
         [Tooltip("Минимальный доход в секунду, идёт всегда")]
         public float BaseIncomePerSecond = 0.5f;
 
@@ -80,7 +90,7 @@ namespace CityGame.Buildings
         {
             get
             {
-                float sum = BaseIncomePerSecond;
+                float sum = BaseIncomePerSecond + (ExtraIncome != null ? ExtraIncome() : 0f);
                 if (_model != null)
                     foreach (District d in _model.Districts) sum += DistrictIncomePerSecond(d);
                 return sum;
@@ -135,7 +145,7 @@ namespace CityGame.Buildings
 
         void Tick()
         {
-            float total = BaseIncomePerSecond * TickSeconds;
+            float total = (BaseIncomePerSecond + (ExtraIncome != null ? ExtraIncome() : 0f)) * TickSeconds;
             foreach (District d in _model.Districts)
             {
                 float tax = DistrictIncomePerSecond(d) * TickSeconds;

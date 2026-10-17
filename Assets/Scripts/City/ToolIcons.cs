@@ -93,6 +93,45 @@ namespace CityGame.Buildings
                     Fill(px, Seg(13, 51, 51, 13, 9), Red);
                     break;
 
+                case Tool.Canal:
+                {
+                    Color sand = new Color32(0xD5, 0xC2, 0x91, 0xFF);
+                    Color water = new Color32(0x6F, 0xB4, 0xE8, 0xFF);
+                    Fill(px, RBox(4, 12, 60, 52, 6), sand);
+                    Fill(px, Box(4, 22, 60, 42), water);
+                    Fill(px, Seg(12, 32, 22, 32, 3), White);
+                    Fill(px, Seg(36, 36, 48, 36, 3), White);
+                    break;
+                }
+
+                case Tool.Port:
+                {
+                    Color water = new Color32(0xA9, 0xD6, 0xF2, 0xFF);
+                    Fill(px, Circle(32, 32, 29), water);
+                    Fill(px, RBox(12, 14, 52, 26, 3), new Color32(0xB9, 0x8B, 0x5E, 0xFF));
+                    Fill(px, Box(14, 26, 28, 36), Red);
+                    Fill(px, Box(30, 26, 44, 34), Yellow);
+                    Fill(px, Box(44, 26, 49, 54), Slate);
+                    Fill(px, Box(28, 49, 49, 54), Slate);
+                    Fill(px, Box(28, 40, 31, 50), Slate);
+                    break;
+                }
+
+                case Tool.Bus:
+                {
+                    Color body = new Color32(0x2E, 0x8B, 0x77, 0xFF);
+                    Fill(px, Circle(32, 32, 29), new Color32(0xE3, 0xE0, 0xD8, 0xFF));
+                    Fill(px, RBox(8, 18, 56, 44, 5), body);
+                    Fill(px, Box(8, 30, 56, 33), Color.Lerp(body, White, 0.35f));
+                    foreach (float x in new[] { 12f, 22f, 32f, 42f })
+                        Fill(px, RBox(x, 34, x + 7, 41, 1.5f), new Color32(0xDC, 0xEE, 0xF6, 0xFF));
+                    Fill(px, Circle(19, 18, 5), Slate);
+                    Fill(px, Circle(45, 18, 5), Slate);
+                    Fill(px, Circle(19, 18, 2), White);
+                    Fill(px, Circle(45, 18, 2), White);
+                    break;
+                }
+
                 case Tool.Expand:
                     Fill(px, Hex(32, 32, 29), new Color32(0x8F, 0xE0, 0xCE, 0xFF));
                     Fill(px, Box(28, 16, 36, 48), new Color32(0x2E, 0x8B, 0x77, 0xFF));

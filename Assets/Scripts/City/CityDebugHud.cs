@@ -66,6 +66,24 @@ namespace CityGame.Buildings
                     _toast = text;
                     _toastUntil = Time.unscaledTime + 1.8f;
                 };
+            if (_city.CanalTool != null)
+                _city.CanalTool.Message += text =>
+                {
+                    _toast = text;
+                    _toastUntil = Time.unscaledTime + 1.8f;
+                };
+            if (_city.PortTool != null)
+                _city.PortTool.Message += text =>
+                {
+                    _toast = text;
+                    _toastUntil = Time.unscaledTime + 1.8f;
+                };
+            if (_city.BusTool != null)
+                _city.BusTool.Message += text =>
+                {
+                    _toast = text;
+                    _toastUntil = Time.unscaledTime + 1.8f;
+                };
             if (_city.HighwayTool != null)
                 _city.HighwayTool.Message += text =>
                 {
@@ -118,7 +136,7 @@ namespace CityGame.Buildings
 
         static readonly string[] Names =
         {
-            "нет", "Дорога", "Шоссе", "Одностор.", "Развилка", "Жильё", "Торговля", "Промышл.", "Служба", "Снести", "Расширить"
+            "нет", "Дорога", "Шоссе", "Одностор.", "Развилка", "Жильё", "Торговля", "Промышл.", "Служба", "Снести", "Расширить", "Канал", "Порт", "Автобус"
         };
 
         string LabelFor(Tool tool)
@@ -131,6 +149,9 @@ namespace CityGame.Buildings
                 case Tool.OneWay: return name + "\n" + _city.Economy.RoadCostPerCell + "/кл";
                 case Tool.Junction: return name + "\n" + _city.Economy.RoundaboutCost + "/" +
                                            _city.Economy.HighwayRoundaboutCost + "/" + _city.Economy.OverpassCost;
+                case Tool.Canal: return name + "\n" + _city.Economy.CanalCostPerCell + "/кл";
+                case Tool.Port: return name + "\n" + _city.Economy.PortCost;
+                case Tool.Bus: return name + "\n" + _city.Economy.BusStationCost;
                 case Tool.Residential: return name + "\n" + _city.Economy.BuildCost[(int)BuildingCategory.Residential];
                 case Tool.Commercial: return name + "\n" + _city.Economy.BuildCost[(int)BuildingCategory.Commercial];
                 case Tool.Industrial: return name + "\n" + _city.Economy.BuildCost[(int)BuildingCategory.Industrial];
@@ -271,7 +292,8 @@ namespace CityGame.Buildings
             string tool = Names[(int)_city.CurrentTool];
             if (_city.CurrentTool == Tool.Service) tool += ": " + ServiceSpecs.Title(_city.CurrentService);
             GUI.Label(new Rect(textRect.x, textRect.y + 26f, textRect.width, 20f),
-                "Инструмент: " + tool + " · машин " + _city.Traffic.Count, _lblSmallRight);
+                "Инструмент: " + tool + " · машин " + _city.Traffic.Count +
+                (_city.Day != null ? " · " + _city.Day.PhaseName + " " + _city.Day.Clock : ""), _lblSmallRight);
 
             var infoHit = new Rect(margin + barH, barY, w - 2f * margin - barH, barH);
             if (GUI.Button(infoHit, GUIContent.none, GUIStyle.none))
@@ -452,8 +474,8 @@ namespace CityGame.Buildings
             }
 
             Tool[] tools = _toolPage == ToolPage.Roads
-                ? new[] { Tool.Road, Tool.Highway, Tool.OneWay, Tool.Junction }
-                : new[] { Tool.Residential, Tool.Commercial, Tool.Industrial, Tool.Expand };
+                ? new[] { Tool.Road, Tool.Highway, Tool.OneWay, Tool.Junction, Tool.Canal }
+                : new[] { Tool.Residential, Tool.Commercial, Tool.Industrial, Tool.Expand, Tool.Port, Tool.Bus };
             DrawToolPage(panel, tools);
             return panel.y - 6f;
         }

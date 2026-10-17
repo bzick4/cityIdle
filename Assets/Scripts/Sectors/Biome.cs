@@ -29,6 +29,9 @@ namespace CityGame.Sectors
         /// <summary>Море: здания и мосты дороже на 20%.</summary>
         public const float SeaCostFactor = 1.2f;
 
+        /// <summary>Горы: дорога идёт тоннелем и стоит дороже в полтора раза.</summary>
+        public const float MountainRoadCostFactor = 1.5f;
+
         public static readonly Color ClosedColor = new Color32(0x1F, 0x23, 0x29, 0xFF);
 
         public static Color Ground(Biome b)
@@ -53,6 +56,7 @@ namespace CityGame.Sectors
         /// <summary>Множитель цены клетки дороги. На море это мост, он дороже.</summary>
         public static float RoadCostFactor(Biome b)
         {
+            if (b == Biome.Mountain) return MountainRoadCostFactor;
             return b == Biome.Sea ? SeaCostFactor : 1f;
         }
 
@@ -67,7 +71,7 @@ namespace CityGame.Sectors
             switch (b)
             {
                 case Biome.Snow: return "Строить дешевле на 20%";
-                case Biome.Mountain: return "Только дороги, здания не построить";
+                case Biome.Mountain: return "Здания не построить, дороги идут тоннелями (+50%)";
                 case Biome.Desert: return "Строить дешевле на 20%";
                 case Biome.Sea: return "Здания и мосты дороже на 20%";
                 default: return "Бонус к налогам +10%, пока осталось 30% деревьев";

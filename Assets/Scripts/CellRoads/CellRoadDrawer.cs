@@ -26,6 +26,9 @@ namespace CityGame.CellRoads
         /// <summary>Множитель цены клетки дороги (мост на море дороже).</summary>
         public Func<Vector2Int, float> CostFactorAt;
 
+        /// <summary>Клетка занята чем-то кроме зданий (например, портом): дорогу не провести.</summary>
+        public Func<Vector2Int, bool> IsOccupied;
+
         CellRoadMap _map;
         CityModel _city;
         SectorMap _sectors;
@@ -77,6 +80,7 @@ namespace CityGame.CellRoads
         bool Allowed(Vector2Int cell)
         {
             if (_city.HasCell(cell)) return false;
+            if (IsOccupied != null && IsOccupied(cell)) return false;
             return _sectors.IsOpenAt(CellCenter(cell));
         }
 
