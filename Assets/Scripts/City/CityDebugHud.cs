@@ -52,9 +52,30 @@ namespace CityGame.Buildings
         GUIStyle _lblDiag;
         GUIStyle _lbl, _lblSmall, _lblSmallRight, _lblBig, _lblCenter, _lblShop, _lblAction;
 
+        [Tooltip("После постройки закрыть панель и выйти из режима строительства")]
+        public bool ExitAfterBuild = true;
+
+        bool _exitPending;
+
+        /// <summary>Положение элементов интерфейса (в координатах GUI, масштаб в GuiScale). Нужно обучению для подсветки.</summary>
+        public readonly System.Collections.Generic.Dictionary<string, Rect> Anchors =
+            new System.Collections.Generic.Dictionary<string, Rect>();
+
+        public float GuiScale => Scale;
+        public bool ToolsOpen => _popup == Popup.Tools;
+        /// <summary>Home, Districts, Roads или Services.</summary>
+        public string ToolsPage => _toolPage.ToString();
+
+        /// <summary>Закрыть все панели (и сбросить инструмент на «Руку»).</summary>
+        public void ClosePanels()
+        {
+            SetPopup(Popup.None);
+        }
+
         public void Bind(CitySystem city)
         {
             _city = city;
+            _city.Economy.Spent += () => { if (ExitAfterBuild) _exitPending = true; };
             _city.Placer.Message += text =>
             {
                 _toast = text;
@@ -112,6 +133,15 @@ namespace CityGame.Buildings
 
         void Update()
         {
+            // Выход делаем здесь, а не в момент траты: инструмент ещё мог дорисовывать штрих.
+            if (_exitPending)
+            {
+                _exitPending = false;
+                // Панель могла закрыться ещё при выборе инструмента, поэтому сбрасываем режим всегда.
+                ResetBuildMode();
+                if (_popup == Popup.Tools) _popup = Popup.None;
+            }
+
             // Выход в меню разрушает этот объект, поэтому делаем его вне OnGUI.
             if (!_exitRequested) return;
             _exitRequested = false;
@@ -290,8 +320,15 @@ namespace CityGame.Buildings
             if (_city == null || _city.Economy == null) return;
             EnsureStyles();
 
+            // Пока идёт первое обучение, интерфейс закрыт, кроме подсвеченной кнопки: гасим остальные нажатия.
+            GUI.matrix = Matrix4x4.identity;
+            Event ev = Event.current;
+            if (ev != null && ev.isMouse && _city.Tutorial != null && _city.Tutorial.BlocksUi(ev.mousePosition))
+                ev.Use();
+
             float s = Scale;
             GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1f));
+            Anchors.Clear();
             float w = Screen.width / s;
             float h = Screen.height / s;
 
@@ -322,6 +359,8 @@ namespace CityGame.Buildings
 
             // Круглая кнопка «магазин».
             var shop = new Rect(margin, barY, barH, barH);
+            Anchors["shop"] = shop;
+            Anchors["info"] = new Rect(margin + barH, barY, w - 2f * margin - barH, barH);
             Draw(shop, _circle, ShopColor);
             GUI.Label(shop, _popup == Popup.Tools ? "×" : "$", _lblShop);
             if (GUI.Button(shop, GUIContent.none, GUIStyle.none))
@@ -421,6 +460,7 @@ namespace CityGame.Buildings
             float gap = 8f;
             float bw = (_dialogRect.width - 28f - gap) * 0.6f;
             var open = new Rect(_dialogRect.x + 14f, _dialogRect.y + 78f, bw, 40f);
+            Anchors["open"] = open;
             var cancel = new Rect(open.xMax + gap, open.y, _dialogRect.width - 28f - gap - bw, 40f);
             if (DrawActionButton(open, "ОТКРЫТЬ", ShopColor, new Color32(0x2C, 0x3A, 0x40, 0xFF), true))
                 _city.Tapper.ConfirmPending();
@@ -433,14 +473,17 @@ namespace CityGame.Buildings
         /// Строить и покупать можно только пока открыта панель выбора. Как только она закрывается,
         /// инструмент сбрасывается на «Рука», а незавершённый выбор развилки или области отменяется.
         /// </summary>
+        /// <summary>Выйти из режима строительства: инструмент «Рука», незавершённый выбор отменён.</summary>
+        void ResetBuildMode()
+        {
+            _city.Select(Tool.Pan);
+            if (_city.JunctionTool != null && _city.JunctionTool.HasSelection) _city.JunctionTool.Cancel();
+            if (_city.Tapper.HasPending) _city.Tapper.CancelPending();
+        }
+
         void SetPopup(Popup next)
         {
-            if (_popup == Popup.Tools && next != Popup.Tools)
-            {
-                _city.Select(Tool.Pan);
-                if (_city.JunctionTool != null && _city.JunctionTool.HasSelection) _city.JunctionTool.Cancel();
-                if (_city.Tapper.HasPending) _city.Tapper.CancelPending();
-            }
+            if (_popup == Popup.Tools && next != Popup.Tools) ResetBuildMode();
 
             _popup = next;
             if (next == Popup.Tools) _toolPage = ToolPage.Home;
@@ -458,6 +501,7 @@ namespace CityGame.Buildings
             Draw(panel, _panel, PanelColor);
 
             Rect back = new Rect(panel.x + 8f, panel.y + 8f, 82f, 30f);
+            Anchors["back"] = back;
             if (DrawActionButton(back, home ? "ЗАКРЫТЬ" : "← НАЗАД",
                     new Color32(0xF7, 0xF7, 0xF4, 0xFF), new Color32(0x3B, 0x45, 0x52, 0xFF), true))
             {
@@ -503,6 +547,7 @@ namespace CityGame.Buildings
 
         void DrawCategoryCard(Rect r, string title, Texture2D icon, ToolPage page, Color fill)
         {
+            Anchors["card:" + page] = r;
             Draw(r, _panel, fill);
             float size = Mathf.Min(38f, r.width * 0.42f);
             GUI.DrawTexture(new Rect(r.x + (r.width - size) * 0.5f, r.y + 7f, size, size), icon,
@@ -540,6 +585,7 @@ namespace CityGame.Buildings
                 int iconIndex = (int)tool - 1;
                 Rect r = new Rect(x0 + (i % columns) * (cardW + gap),
                     y0 + (i / columns) * (cardH + gap), cardW, cardH);
+                Anchors["tool:" + tool] = r;
                 bool selected = _city.CurrentTool == tool;
                 Draw(r, _panel, selected ? ShopColor : new Color32(0xF7, 0xF7, 0xF4, 0xFF));
                 float iconSize = 32f;
@@ -562,6 +608,7 @@ namespace CityGame.Buildings
             {
                 ServiceKind kind = (ServiceKind)i;
                 Rect r = new Rect(x0 + i * (cardW + gap), y, cardW, cardH);
+                Anchors["service:" + i] = r;
                 Draw(r, _panel, _city.CurrentTool == Tool.Service && _city.CurrentService == kind
                     ? ShopColor : new Color32(0xF7, 0xF7, 0xF4, 0xFF));
                 float iconSize = 36f;
@@ -613,6 +660,13 @@ namespace CityGame.Buildings
             var heatRect = new Rect(carsRect.xMax + 6f, y, 116f, 32f);
             if (DrawActionButton(heatRect, heat ? "НАГРУЗКА ✓" : "НАГРУЗКА", heat ? ShopColor : light, heat ? inkOn : ink, true))
                 _city.Heatmap.Visible = !heat;
+
+            var helpRect = new Rect(heatRect.xMax + 6f, y, 66f, 32f);
+            if (DrawActionButton(helpRect, "ОБУЧ.", light, ink, true))
+            {
+                SetPopup(Popup.None);
+                if (_city.Tutorial != null) _city.Tutorial.Restart();
+            }
 
             var menuRect = new Rect(_popupRect.xMax - 10f - 92f, y, 92f, 32f);
             if (DrawActionButton(menuRect, "В МЕНЮ", new Color32(0xF8, 0xE1, 0xDE, 0xFF), ink, true))

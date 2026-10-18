@@ -74,6 +74,7 @@ namespace CityGame.Buildings
         public RoadGraph RoadNetwork { get; private set; }
         public Tool CurrentTool { get; private set; } = Tool.Pan;
         public CityTutorial Tutorial => _tutorial;
+        public CityDebugHud Hud => _hud;
 
         [Tooltip("Как часто сохранять город, секунд")]
         public float AutosaveSeconds = 20f;

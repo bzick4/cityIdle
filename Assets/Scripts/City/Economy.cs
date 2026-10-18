@@ -107,11 +107,15 @@ namespace CityGame.Buildings
             return Money >= CostOf(c, kind);
         }
 
+        /// <summary>Деньги потрачены на постройку: любой инструмент строительства сообщает об этом здесь.</summary>
+        public event Action Spent;
+
         public bool TrySpend(float amount)
         {
             if (Money < amount) return false;
             Money -= amount;
             MoneyChanged?.Invoke(Money);
+            Spent?.Invoke();
             return true;
         }
 

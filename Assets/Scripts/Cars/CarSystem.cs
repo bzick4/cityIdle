@@ -556,6 +556,23 @@ namespace CityGame.Cars
             return pts[0];
         }
 
+        /// <summary>
+        /// Плавный поворот курса машины по углу. Смешивать векторы нельзя: при развороте на 180 градусов
+        /// смесь схлопывается в ноль, после нормализации курс не меняется, и машина едет задом.
+        /// Резкий разворот (больше 120 градусов, например с места или в тупике) делаем сразу.
+        /// </summary>
+        static Vector2 Turn(Vector2 current, Vector2 target, float ease)
+        {
+            if (target.sqrMagnitude < 1e-8f) return current;
+            if (current.sqrMagnitude < 1e-8f) return target.normalized;
+            float a = Mathf.Atan2(current.y, current.x) * Mathf.Rad2Deg;
+            float b = Mathf.Atan2(target.y, target.x) * Mathf.Rad2Deg;
+            float d = Mathf.DeltaAngle(a, b);
+            a = Mathf.Abs(d) > 120f ? b : a + d * ease;
+            float r = a * Mathf.Deg2Rad;
+            return new Vector2(Mathf.Cos(r), Mathf.Sin(r));
+        }
+
         void Render(float dt)
         {
             _lowBatch.Clear();
@@ -604,8 +621,7 @@ namespace CityGame.Cars
                 else
                 {
                     car.Pos = Vector2.Lerp(car.Pos, target, ease);
-                    Vector2 nd = Vector2.Lerp(car.Dir, fwd, ease);
-                    car.Dir = nd.sqrMagnitude > 1e-6f ? nd.normalized : fwd;
+                    car.Dir = Turn(car.Dir, fwd, ease);
                 }
 
                 // На мосту машина сверху, если едет вдоль полотна моста, иначе под ним.
