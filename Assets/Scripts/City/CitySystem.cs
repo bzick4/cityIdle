@@ -77,9 +77,9 @@ namespace CityGame.Buildings
             {
                 switch (CurrentTool)
                 {
-                    case Tool.Road: return RoadDrawer;
+                    case Tool.Road:
                     case Tool.Highway:
-                    case Tool.OneWay: return HighwayTool;
+                    case Tool.OneWay: return FreeRoadDrawer;
                     case Tool.Canal: return CanalTool;
                     default: return null;
                 }
@@ -410,7 +410,7 @@ namespace CityGame.Buildings
             JunctionTool = GetOrAdd<JunctionTapper>();
             JunctionTool.CellSize = CellSize;
             JunctionTool.Bind(RoadMap, Economy);
-            GetOrAdd<RoadDrawFx>().Bind(CellSize, RoadDrawer, HighwayTool, CanalTool);
+            GetOrAdd<RoadDrawFx>().Bind(CellSize, RoadDrawer, HighwayTool, FreeRoadDrawer, CanalTool);
             var tunnels = GetOrAdd<TunnelRenderer>();
             tunnels.CellSize = CellSize;
             tunnels.Bind(RoadMap, Biomes);
@@ -494,10 +494,11 @@ namespace CityGame.Buildings
             bool build = tool >= Tool.Residential && tool <= Tool.Erase;
             if (_sectorRenderer != null) _sectorRenderer.SetGridVisible(tool != Tool.Pan);
 
-            FreeRoadDrawer.enabled = false;
-            RoadDrawer.enabled = tool == Tool.Road;
-            HighwayTool.enabled = tool == Tool.Highway || tool == Tool.OneWay;
-            HighwayTool.OneWayMode = tool == Tool.OneWay;
+            RoadDrawer.enabled = false;
+            HighwayTool.enabled = false;
+            FreeRoadDrawer.Type = (tool == Tool.Highway || tool == Tool.OneWay) ? RoadType.Highway : RoadType.Local;
+            FreeRoadDrawer.OneWayMode = tool == Tool.OneWay;
+            FreeRoadDrawer.enabled = tool == Tool.Road || tool == Tool.Highway || tool == Tool.OneWay;
             JunctionTool.enabled = tool == Tool.Junction;
             Placer.enabled = build;
             Tapper.enabled = tool == Tool.Expand;
