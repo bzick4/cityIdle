@@ -718,7 +718,13 @@ namespace CityGame.CellRoads
                 return;
             }
 
-            if (count < 3) return;
+            if (count == 2)
+            {
+                // Для прямых проходов (N+S, E+W) рукава полностью перекрывают центр,
+                // но при тупом угле (например, N+NE) остаётся треугольный зазор — заполняем диском.
+                AddDisc(v, t, c, hw);
+                return;
+            }
 
             if (type == JunctionType.Roundabout)
             {

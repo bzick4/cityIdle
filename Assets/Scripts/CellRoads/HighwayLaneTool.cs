@@ -38,6 +38,9 @@ namespace CityGame.CellRoads
         bool _pending;
         bool _trimmed;
         string _problem;
+        // Параметры кривой Безье для плавного превью во время рисования.
+        Vector2 _bezP0, _bezP1, _bezP2, _bezP3;
+        bool _hasBezPreview;
         public string Problem => _problem;
 
         public bool Drawing => _drawing;
@@ -219,6 +222,9 @@ namespace CityGame.CellRoads
             Vector2 world = new Vector2(wp.x, wp.y);
             Vector2 startWorld = new Vector2((_startCell.x + 0.5f) * CellSize, (_startCell.y + 0.5f) * CellSize);
 
+            // Сохраняем параметры кривой для плавного превью.
+            StoreBezPreview(startWorld, _startTangent, world);
+
             var cells = RasterizeBezier(startWorld, _startTangent, world);
             _path.Clear();
             _path.Add(_startCell);
@@ -245,6 +251,22 @@ namespace CityGame.CellRoads
                 seen.Add(to);
             }
             UpdatePreview();
+        }
+
+        void StoreBezPreview(Vector2 start, Vector2 t0, Vector2 end)
+        {
+            float dist = Vector2.Distance(start, end);
+            if (dist < 0.01f) { _hasBezPreview = false; return; }
+            Vector2 chord = (end - start) / dist;
+            if (t0 == Vector2.zero) t0 = chord;
+            if (Vector2.Dot(t0, chord) < -0.1f)
+                t0 = Vector2.Lerp(chord, t0, 0.3f).normalized;
+            float h = dist * 0.38f;
+            _bezP0 = start;
+            _bezP1 = start + t0 * h;
+            _bezP2 = end - chord * h;
+            _bezP3 = end;
+            _hasBezPreview = true;
         }
 
         List<Vector2Int> RasterizeBezier(Vector2 start, Vector2 t0, Vector2 end)
@@ -449,10 +471,29 @@ namespace CityGame.CellRoads
             if (_preview == null) return;
             _preview.widthMultiplier = CellSize * (OneWayMode ? 0.5f : 0.88f);
             if (_path.Count < 2) { _preview.enabled = false; return; }
-            var smoothed = BuildSmoothedPreview(_path);
-            _preview.positionCount = smoothed.Count;
-            for (int i = 0; i < smoothed.Count; i++)
-                _preview.SetPosition(i, new Vector3(smoothed[i].x, smoothed[i].y, -0.02f));
+
+            // Во время рисования — плавная кривая Безье напрямую (без зигзага по клеткам).
+            // После подтверждения — сглаженный путь по фактическим клеткам.
+            if (_drawing && _hasBezPreview)
+            {
+                const int steps = 24;
+                _preview.positionCount = steps + 1;
+                for (int i = 0; i <= steps; i++)
+                {
+                    float t = i / (float)steps;
+                    float u = 1f - t;
+                    Vector2 pt = u*u*u * _bezP0 + 3f*u*u*t * _bezP1
+                               + 3f*u*t*t * _bezP2 + t*t*t * _bezP3;
+                    _preview.SetPosition(i, new Vector3(pt.x, pt.y, -0.02f));
+                }
+            }
+            else
+            {
+                var smoothed = BuildSmoothedPreview(_path);
+                _preview.positionCount = smoothed.Count;
+                for (int i = 0; i < smoothed.Count; i++)
+                    _preview.SetPosition(i, new Vector3(smoothed[i].x, smoothed[i].y, -0.02f));
+            }
             _preview.enabled = true;
         }
 
