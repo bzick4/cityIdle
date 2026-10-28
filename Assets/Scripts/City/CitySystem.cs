@@ -77,9 +77,9 @@ namespace CityGame.Buildings
             {
                 switch (CurrentTool)
                 {
-                    case Tool.Road:
+                    case Tool.Road: return RoadDrawer;
                     case Tool.Highway:
-                    case Tool.OneWay: return FreeRoadDrawer;
+                    case Tool.OneWay: return HighwayTool;
                     case Tool.Canal: return CanalTool;
                     default: return null;
                 }
@@ -104,7 +104,7 @@ namespace CityGame.Buildings
         CityDebugHud _hud;
         CityTutorial _tutorial;
         MainMenu _menu;
-        // CellRoadGraphSync удалён: в варианте 2 RoadNetwork = _roads.Graph (используется напрямую).
+        CellRoadGraphSync _graphSync;
         BiomeMap _biomeMap;
         SectorRenderer _sectorRenderer;
         readonly List<Component> _added = new List<Component>();
@@ -204,16 +204,20 @@ namespace CityGame.Buildings
 
             foreach (HexCoord h in Sectors.Open) data.openSectors.Add(new HexSave { q = h.Q, r = h.R });
 
-            // Свободные дороги: сохраняем граф рёбер.
-            foreach (Roads.RoadNode n in RoadNetwork.Nodes)
-                data.freeNodes.Add(new FreeRoadNodeSave { id = n.Id, x = n.Position.x, y = n.Position.y });
-            foreach (Roads.RoadEdge e in RoadNetwork.Edges)
+            var types = new Dictionary<Vector2Int, CellRoads.JunctionType>();
+            foreach (var kv in RoadMap.ExplicitTypes) types[kv.Key] = kv.Value;
+            foreach (var kv in RoadMap.Cells)
             {
-                var pts = new float[e.Points.Count * 2];
-                for (int i = 0; i < e.Points.Count; i++) { pts[i * 2] = e.Points[i].x; pts[i * 2 + 1] = e.Points[i].y; }
-                data.freeEdges.Add(new FreeRoadEdgeSave
-                    { id = e.Id, nodeA = e.NodeA, nodeB = e.NodeB, type = (int)e.Type, oneWay = e.OneWay, points = pts });
+                types.TryGetValue(kv.Key, out CellRoads.JunctionType t);
+                data.roads.Add(new RoadCellSave { x = kv.Key.x, y = kv.Key.y, mask = kv.Value, type = (int)t });
             }
+
+            foreach (var kv in RoadMap.HighwayDirections)
+                data.highway.Add(new HighwayCellSave { x = kv.Key.x, y = kv.Key.y, heading = kv.Value,
+                    kind = (RoadMap.IsRampAt(kv.Key) ? 1 : 0) |
+                           (RoadMap.IsStandaloneHighwayAt(kv.Key) ? 2 : 0) |
+                           (RoadMap.IsOwnedHighwayAt(kv.Key) ? 4 : 0),
+                    originalMask = RoadMap.StandaloneOriginalMaskAt(kv.Key) });
 
             foreach (BuildingCell c in Model.Cells)
                 data.buildings.Add(new BuildingSave
@@ -235,29 +239,33 @@ namespace CityGame.Buildings
             foreach (HexSave h in data.openSectors) open.Add(new HexCoord(h.q, h.r));
             Sectors.Load(open);
 
-            // Свободные дороги: восстанавливаем граф из сохранения.
-            if (data.freeNodes != null && data.freeEdges != null &&
-                data.freeNodes.Count > 0 && data.freeEdges.Count > 0)
+            var masks = new Dictionary<Vector2Int, int>();
+            var types = new Dictionary<Vector2Int, CellRoads.JunctionType>();
+            var highway = new Dictionary<Vector2Int, int>();
+            var ramps = new HashSet<Vector2Int>();
+            var standaloneHighways = new HashSet<Vector2Int>();
+            var ownedHighways = new HashSet<Vector2Int>();
+            var highwayOriginalMasks = new Dictionary<Vector2Int, int>();
+            foreach (RoadCellSave r in data.roads)
             {
-                var nodeMap = new Dictionary<int, Roads.RoadNode>();
-                foreach (FreeRoadNodeSave ns in data.freeNodes)
-                {
-                    if (ns == null) continue;
-                    Roads.RoadNode n = RoadNetwork.AddNode(new Vector2(ns.x, ns.y), Roads.RoadLayer.Ground);
-                    nodeMap[ns.id] = n;
-                }
-                foreach (FreeRoadEdgeSave es in data.freeEdges)
-                {
-                    if (es == null || es.points == null || es.points.Length < 4) continue;
-                    if (!nodeMap.TryGetValue(es.nodeA, out Roads.RoadNode na)) continue;
-                    if (!nodeMap.TryGetValue(es.nodeB, out Roads.RoadNode nb)) continue;
-                    var pts = new List<Vector2>(es.points.Length / 2);
-                    for (int i = 0; i + 1 < es.points.Length; i += 2)
-                        pts.Add(new Vector2(es.points[i], es.points[i + 1]));
-                    Roads.RoadEdge edge = RoadNetwork.AddEdge(na, nb, pts, (Roads.RoadType)es.type);
-                    if (edge != null) edge.OneWay = es.oneWay;
-                }
+                var cell = new Vector2Int(r.x, r.y);
+                masks[cell] = r.mask;
+                if (r.type != 0) types[cell] = (CellRoads.JunctionType)r.type;
             }
+
+            if (data.highway != null)
+                foreach (HighwayCellSave h in data.highway)
+                    if (h != null)
+                    {
+                        var cell = new Vector2Int(h.x, h.y);
+                        highway[cell] = h.heading;
+                        if ((h.kind & 1) != 0) ramps.Add(cell);
+                        if ((h.kind & 2) != 0) standaloneHighways.Add(cell);
+                        if ((h.kind & 4) != 0) ownedHighways.Add(cell);
+                        if ((h.kind & 2) != 0) highwayOriginalMasks[cell] = h.originalMask;
+                    }
+
+            RoadMap.Load(masks, types, highway, ramps, standaloneHighways, ownedHighways, highwayOriginalMasks);
 
             var cells = new List<BuildingCell>();
             foreach (BuildingSave b in data.buildings)
@@ -303,9 +311,9 @@ namespace CityGame.Buildings
         void StartGame(SaveData data, int seed)
         {
             _roads = GetComponent<RoadSystem>();
-            // Вариант 2: свободные дороги. RoadNetwork == _roads.Graph; CellRoadMap пустой (только для систем, ещё не мигрировавших).
-            RoadNetwork = _roads.Graph;
             RoadMap = new CellRoadMap();
+            RoadNetwork = new RoadGraph();
+            _graphSync = new CellRoadGraphSync(RoadMap, RoadNetwork, CellSize);
 
             Model = new CityModel();
 
@@ -378,28 +386,31 @@ namespace CityGame.Buildings
             BusTool.CellSize = CellSize;
             BusTool.Bind(BusStations, Ports, Canals, Model, RoadMap, Sectors, Biomes, Economy);
 
-            // Свободные дороги: используем Roads.RoadDrawer из RoadSystem.
+            RoadDrawer = GetOrAdd<CellRoadDrawer>();
+            RoadDrawer.CellSize = CellSize;
+            RoadDrawer.Bind(RoadMap, Model, Sectors, Economy);
+            RoadDrawer.CostFactorAt = Biomes.RoadCostFactor;
+            RoadDrawer.IsOccupied = c => Ports.Has(c) || BusStations.Has(c);
+            RoadDrawer.enabled = false;
+            HighwayTool = GetOrAdd<HighwayLaneTool>();
+            HighwayTool.CellSize = CellSize;
+            HighwayTool.Bind(RoadMap, Model, Sectors, Economy);
+            HighwayTool.CostFactorAt = Biomes.RoadCostFactor;
+            HighwayTool.IsOccupied = c => Ports.Has(c) || BusStations.Has(c);
+            HighwayTool.enabled = false;
+
+            // Свободные дороги (вариант 2): инициализируем для будущего использования.
             FreeRoadDrawer = _roads.Drawer;
             FreeRoadDrawer.Economy = Economy;
             FreeRoadDrawer.CostFactorAt = p => Biomes.RoadCostFactor(
                 new Vector2Int(Mathf.FloorToInt(p.x / CellSize), Mathf.FloorToInt(p.y / CellSize)));
             FreeRoadDrawer.CanBuildAt = Sectors.IsOpenAt;
-            FreeRoadDrawer.enabled = false; // включается в Select()
+            FreeRoadDrawer.enabled = false;
 
-            // CellRoadDrawer и HighwayLaneTool больше не используются для рисования,
-            // но HighwayTool нужен HUD'у для подписки на сообщения.
-            RoadDrawer = GetOrAdd<CellRoadDrawer>();
-            RoadDrawer.CellSize = CellSize;
-            RoadDrawer.Bind(RoadMap, Model, Sectors, Economy);
-            RoadDrawer.enabled = false;
-            HighwayTool = GetOrAdd<HighwayLaneTool>();
-            HighwayTool.CellSize = CellSize;
-            HighwayTool.Bind(RoadMap, Model, Sectors, Economy);
-            HighwayTool.enabled = false;
             JunctionTool = GetOrAdd<JunctionTapper>();
             JunctionTool.CellSize = CellSize;
             JunctionTool.Bind(RoadMap, Economy);
-            GetOrAdd<RoadDrawFx>().Bind(CellSize, FreeRoadDrawer, CanalTool);
+            GetOrAdd<RoadDrawFx>().Bind(CellSize, RoadDrawer, HighwayTool, CanalTool);
             var tunnels = GetOrAdd<TunnelRenderer>();
             tunnels.CellSize = CellSize;
             tunnels.Bind(RoadMap, Biomes);
@@ -483,15 +494,10 @@ namespace CityGame.Buildings
             bool build = tool >= Tool.Residential && tool <= Tool.Erase;
             if (_sectorRenderer != null) _sectorRenderer.SetGridVisible(tool != Tool.Pan);
 
-            bool freeRoad = tool == Tool.Road || tool == Tool.Highway || tool == Tool.OneWay;
-            FreeRoadDrawer.enabled = freeRoad;
-            if (freeRoad)
-            {
-                FreeRoadDrawer.Type = tool == Tool.Highway ? Roads.RoadType.Highway : Roads.RoadType.Local;
-                FreeRoadDrawer.OneWayMode = tool == Tool.OneWay;
-            }
-            RoadDrawer.enabled = false;
-            HighwayTool.enabled = false;
+            FreeRoadDrawer.enabled = false;
+            RoadDrawer.enabled = tool == Tool.Road;
+            HighwayTool.enabled = tool == Tool.Highway || tool == Tool.OneWay;
+            HighwayTool.OneWayMode = tool == Tool.OneWay;
             JunctionTool.enabled = tool == Tool.Junction;
             Placer.enabled = build;
             Tapper.enabled = tool == Tool.Expand;

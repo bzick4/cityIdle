@@ -60,8 +60,7 @@ namespace CityGame.Buildings
             return new Vector2((cell.x + 0.5f) * CellSize, (cell.y + 0.5f) * CellSize);
         }
 
-        /// <summary>В варианте 2 (свободные дороги) дороги не занимают клетки — всегда false.</summary>
-        public bool BlockedByRoad(Vector2Int cell) => false;
+        public bool BlockedByRoad(Vector2Int cell) => _roads != null && _roads.Has(cell);
 
         void Awake()
         {
