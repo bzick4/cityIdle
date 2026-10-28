@@ -76,8 +76,8 @@ namespace CityGame.CellRoads
 
         readonly List<Vector2Int> _path = new List<Vector2Int>();
         bool _drawing;
-        bool _axisKnown;
-        bool _axisHorizontal;
+        bool _dirKnown;
+        Vector2Int _dir;
         bool _previewDirty;
 
         GameObject _preview;
@@ -150,7 +150,8 @@ namespace CityGame.CellRoads
                 if (!Allowed(start)) return;
 
                 _drawing = true;
-                _axisKnown = false;
+                _dirKnown = false;
+                _dir = Vector2Int.zero;
                 _path.Clear();
                 _path.Add(start);
                 _previewDirty = true;
@@ -173,52 +174,60 @@ namespace CityGame.CellRoads
             return new Vector2(p.x, p.y);
         }
 
-        /// <summary>Двигает конец дороги к клетке под пальцем, строго по осям.</summary>
+        /// <summary>Округляет смещение до ближайшего из 8 направлений (как ферзь в шахматах).</summary>
+        static Vector2Int Snap8(Vector2Int delta)
+        {
+            if (delta.x == 0 && delta.y == 0) return Vector2Int.zero;
+            float angle = Mathf.Atan2(delta.y, delta.x);
+            float snapped = Mathf.Round(angle / (Mathf.PI * 0.25f)) * (Mathf.PI * 0.25f);
+            return new Vector2Int(Mathf.RoundToInt(Mathf.Cos(snapped)), Mathf.RoundToInt(Mathf.Sin(snapped)));
+        }
+
+        /// <summary>Двигает конец дороги к клетке под пальцем в одном из 8 направлений.</summary>
         void Follow(Vector2Int target)
         {
-            for (int guard = 0; guard < 128; guard++)
+            for (int guard = 0; guard < 256; guard++)
             {
                 Vector2Int tail = _path[_path.Count - 1];
                 if (tail == target) return;
 
+                // Откат назад по пути.
                 int idx = _path.IndexOf(target);
                 if (idx >= 0)
                 {
                     _path.RemoveRange(idx + 1, _path.Count - idx - 1);
-                    _axisKnown = false;
+                    _dirKnown = false;
                     if (_path.Count >= 2)
                     {
-                        _axisHorizontal = _path[_path.Count - 1].y == _path[_path.Count - 2].y;
-                        _axisKnown = true;
+                        _dir = Snap8(_path[_path.Count - 1] - _path[_path.Count - 2]);
+                        _dirKnown = true;
                     }
                     _previewDirty = true;
                     return;
                 }
 
-                Vector2Int d = target - tail;
-                if (!_axisKnown)
+                Vector2Int raw = target - tail;
+                Vector2Int snap = Snap8(raw);
+
+                if (!_dirKnown)
                 {
-                    _axisHorizontal = Mathf.Abs(d.x) >= Mathf.Abs(d.y);
-                    _axisKnown = true;
+                    _dir = snap;
+                    _dirKnown = true;
+                }
+                else
+                {
+                    // Переключаем направление, если отклонение сильное (TurnThreshold клеток в сторону).
+                    int along = raw.x * _dir.x + raw.y * _dir.y;
+                    int acrossX = raw.x - _dir.x * along;
+                    int acrossY = raw.y - _dir.y * along;
+                    int acrossMag = Mathf.Abs(acrossX) + Mathf.Abs(acrossY);
+                    if (acrossMag >= TurnThreshold && acrossMag > Mathf.Abs(along))
+                    {
+                        _dir = snap;
+                    }
                 }
 
-                int along = _axisHorizontal ? d.x : d.y;
-                int across = _axisHorizontal ? d.y : d.x;
-
-                bool turn = across != 0 && (along == 0 ||
-                    (Mathf.Abs(across) >= TurnThreshold && Mathf.Abs(across) > Mathf.Abs(along)));
-                if (turn)
-                {
-                    _axisHorizontal = !_axisHorizontal;
-                    along = _axisHorizontal ? d.x : d.y;
-                }
-
-                if (along == 0) return;
-
-                Vector2Int step = _axisHorizontal
-                    ? new Vector2Int(along > 0 ? 1 : -1, 0)
-                    : new Vector2Int(0, along > 0 ? 1 : -1);
-                Vector2Int next = tail + step;
+                Vector2Int next = tail + _dir;
 
                 if (!Allowed(next)) return;
                 if (_path.Contains(next)) return;

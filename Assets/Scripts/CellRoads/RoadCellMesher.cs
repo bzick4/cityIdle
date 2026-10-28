@@ -743,9 +743,12 @@ namespace CityGame.CellRoads
         static void AddDash(List<Vector3> v, List<int> t, Vector2 c, int side, float h, float lineWidth)
         {
             Vector2 d = Side.Vec(side);
-            Vector2 p = new Vector2(-d.y, d.x) * (lineWidth * 0.5f);
-            Vector2 a = c + d * (h * 0.2f);
-            Vector2 b = c + d * (h * 0.8f);
+            float mag = d.magnitude;
+            Vector2 dn = mag > 0f ? d / mag : Vector2.zero;
+            Vector2 p = new Vector2(-dn.y, dn.x) * (lineWidth * 0.5f);
+            float len = h * mag;
+            Vector2 a = c + dn * (len * 0.2f);
+            Vector2 b = c + dn * (len * 0.8f);
             AddQuad(v, t, a - p, a + p, b + p, b - p);
         }
 
@@ -778,11 +781,13 @@ namespace CityGame.CellRoads
         static void AddArm(List<Vector3> v, List<int> t, Vector2 c, int side, float h, float hw)
         {
             Vector2 d = Side.Vec(side);
-            Vector2 p = new Vector2(-d.y, d.x); // поперёк рукава
+            float mag = d.magnitude;
+            Vector2 dn = mag > 0f ? d / mag : Vector2.zero;
+            Vector2 p = new Vector2(-dn.y, dn.x); // нормализованный поперёк
+            float len = h * mag;                   // h*√2 для диагоналей, h для кардинальных
             Vector2 a = c - p * hw;
             Vector2 b = c + p * hw;
-            Vector2 e = d * h;
-            AddQuad(v, t, a, b, b + e, a + e);
+            AddQuad(v, t, a, b, b + dn * len, a + dn * len);
         }
 
         /// <summary>

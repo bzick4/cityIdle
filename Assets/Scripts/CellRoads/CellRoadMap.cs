@@ -4,20 +4,30 @@ using UnityEngine;
 
 namespace CityGame.CellRoads
 {
-    /// <summary>Стороны клетки как биты: север, восток, юг, запад.</summary>
+    /// <summary>Стороны клетки как биты: N/E/S/W + диагонали NE/SE/SW/NW.</summary>
     public static class Side
     {
         public const int N = 1, E = 2, S = 4, W = 8;
-        public static readonly int[] All = { N, E, S, W };
+        public const int NE = 16, SE = 32, SW = 64, NW = 128;
+        public const int DiagonalMask = NE | SE | SW | NW;
+        public static readonly int[] All = { N, E, S, W, NE, SE, SW, NW };
+        public static readonly int[] Cardinal = { N, E, S, W };
+
+        public static bool IsDiagonal(int side) => (side & DiagonalMask) != 0;
 
         public static Vector2Int Vec(int side)
         {
             switch (side)
             {
-                case N: return new Vector2Int(0, 1);
-                case E: return new Vector2Int(1, 0);
-                case S: return new Vector2Int(0, -1);
-                default: return new Vector2Int(-1, 0);
+                case N:  return new Vector2Int(0, 1);
+                case E:  return new Vector2Int(1, 0);
+                case S:  return new Vector2Int(0, -1);
+                case W:  return new Vector2Int(-1, 0);
+                case NE: return new Vector2Int(1, 1);
+                case SE: return new Vector2Int(1, -1);
+                case SW: return new Vector2Int(-1, -1);
+                case NW: return new Vector2Int(-1, 1);
+                default: return Vector2Int.zero;
             }
         }
 
@@ -25,28 +35,37 @@ namespace CityGame.CellRoads
         {
             switch (side)
             {
-                case N: return S;
-                case S: return N;
-                case E: return W;
-                default: return E;
+                case N:  return S;
+                case S:  return N;
+                case E:  return W;
+                case W:  return E;
+                case NE: return SW;
+                case SW: return NE;
+                case SE: return NW;
+                case NW: return SE;
+                default: return 0;
             }
         }
 
-        /// <summary>Сторона по смещению на одну клетку, 0 если клетки не соседние.</summary>
+        /// <summary>Сторона по смещению на одну клетку (4 кардинальных + 4 диагональных), 0 если не сосед.</summary>
         public static int FromDelta(Vector2Int d)
         {
-            if (d == new Vector2Int(0, 1)) return N;
-            if (d == new Vector2Int(1, 0)) return E;
-            if (d == new Vector2Int(0, -1)) return S;
-            if (d == new Vector2Int(-1, 0)) return W;
+            if (d == new Vector2Int(0, 1))   return N;
+            if (d == new Vector2Int(1, 0))   return E;
+            if (d == new Vector2Int(0, -1))  return S;
+            if (d == new Vector2Int(-1, 0))  return W;
+            if (d == new Vector2Int(1, 1))   return NE;
+            if (d == new Vector2Int(1, -1))  return SE;
+            if (d == new Vector2Int(-1, -1)) return SW;
+            if (d == new Vector2Int(-1, 1))  return NW;
             return 0;
         }
 
         public static int Count(int mask)
         {
             int n = 0;
-            for (int i = 0; i < 4; i++)
-                if ((mask & All[i]) != 0) n++;
+            foreach (int s in All)
+                if ((mask & s) != 0) n++;
             return n;
         }
     }
