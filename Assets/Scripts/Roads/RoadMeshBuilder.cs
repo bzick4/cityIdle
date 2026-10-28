@@ -63,6 +63,86 @@ namespace CityGame.Roads
             return mesh;
         }
 
+        /// <summary>Пунктирная осевая линия по центру дороги.</summary>
+        public static Mesh BuildCenterDashes(IReadOnlyList<Vector2> points,
+            float dashLen = 0.14f, float gapLen = 0.10f, float lineWidth = 0.022f)
+        {
+            var verts = new List<Vector3>();
+            var tris  = new List<int>();
+            float halfW  = lineWidth * 0.5f;
+            float period = dashLen + gapLen;
+            float dist   = 0f;
+
+            List<Vector2> pts = PolylineUtil.Dedup(points, 0.001f);
+            for (int i = 0; i + 1 < pts.Count; i++)
+            {
+                Vector2 a      = pts[i];
+                Vector2 b      = pts[i + 1];
+                float   segLen = Vector2.Distance(a, b);
+                if (segLen < 0.0001f) { dist += segLen; continue; }
+                Vector2 dir  = (b - a) / segLen;
+                Vector2 norm = new Vector2(-dir.y, dir.x);
+
+                float t = 0f;
+                while (t < segLen)
+                {
+                    float phase = (dist + t) % period;
+                    if (phase < dashLen)
+                    {
+                        float end = Mathf.Min(t + (dashLen - phase), segLen);
+                        Vector2 p0 = a + dir * t;
+                        Vector2 p1 = a + dir * end;
+                        int b0 = verts.Count;
+                        verts.Add(new Vector3(p0.x + norm.x * halfW, p0.y + norm.y * halfW));
+                        verts.Add(new Vector3(p0.x - norm.x * halfW, p0.y - norm.y * halfW));
+                        verts.Add(new Vector3(p1.x + norm.x * halfW, p1.y + norm.y * halfW));
+                        verts.Add(new Vector3(p1.x - norm.x * halfW, p1.y - norm.y * halfW));
+                        tris.Add(b0);     tris.Add(b0 + 2); tris.Add(b0 + 1);
+                        tris.Add(b0 + 1); tris.Add(b0 + 2); tris.Add(b0 + 3);
+                        t = end;
+                    }
+                    else
+                    {
+                        t += period - phase;
+                    }
+                }
+                dist += segLen;
+            }
+
+            var mesh = new Mesh { name = "CenterDashes" };
+            if (verts.Count > 0)
+            {
+                mesh.vertices  = verts.ToArray();
+                mesh.triangles = tris.ToArray();
+                mesh.RecalculateBounds();
+            }
+            return mesh;
+        }
+
+        /// <summary>
+        /// Тонкая сплошная лента, смещённая от центра дороги на <paramref name="offset"/>.
+        /// Положительный offset — влево по ходу движения.
+        /// </summary>
+        public static Mesh BuildOffsetRibbon(IReadOnlyList<Vector2> points, float offset, float lineWidth)
+        {
+            List<Vector2> pts = PolylineUtil.Dedup(points, 0.001f);
+            int n = pts.Count;
+            if (n < 2) return new Mesh { name = "OffsetLine" };
+
+            var shifted = new List<Vector2>(n);
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 tangent;
+                if      (i == 0)     tangent = pts[1] - pts[0];
+                else if (i == n - 1) tangent = pts[n - 1] - pts[n - 2];
+                else                 tangent = pts[i + 1] - pts[i - 1];
+                tangent.Normalize();
+                Vector2 normal = new Vector2(-tangent.y, tangent.x);
+                shifted.Add(pts[i] + normal * offset);
+            }
+            return BuildRibbon(shifted, lineWidth);
+        }
+
         /// <summary>Круг в узле: скругляет концы дорог и стыки.</summary>
         public static Mesh BuildDisc(Vector2 center, float radius, int segments = 16)
         {

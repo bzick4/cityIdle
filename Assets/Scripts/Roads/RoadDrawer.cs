@@ -87,6 +87,7 @@ namespace CityGame.Roads
         float _pendingCost;
         float _pendingLength;
         LineRenderer _preview;
+        Material _previewMaterial;
 
         public void Bind(RoadGraph graph)
         {
@@ -104,6 +105,11 @@ namespace CityGame.Roads
             Cancel();
         }
 
+        void OnDestroy()
+        {
+            if (_previewMaterial != null) Destroy(_previewMaterial);
+        }
+
         void CreatePreview()
         {
             var go = new GameObject("RoadPreview");
@@ -115,10 +121,17 @@ namespace CityGame.Roads
             _preview.sortingOrder = 100;
             _preview.positionCount = 0;
 
-            var material = new Material(Shader.Find("Sprites/Default"));
-            material.color = new Color(0.12f, 0.16f, 0.22f, 0.55f);
-            _preview.sharedMaterial = material;
-            _preview.widthMultiplier = RoadSpecs.Width(Type);
+            _previewMaterial = new Material(Shader.Find("Sprites/Default"));
+            _preview.sharedMaterial = _previewMaterial;
+            RefreshPreviewStyle();
+        }
+
+        void RefreshPreviewStyle()
+        {
+            if (_previewMaterial == null) return;
+            Color c = RoadSpecs.BodyColor(Type);
+            _previewMaterial.color = new Color(c.r, c.g, c.b, 0.6f);
+            if (_preview != null) _preview.widthMultiplier = RoadSpecs.Width(Type);
         }
 
         void Update()
@@ -153,7 +166,7 @@ namespace CityGame.Roads
         {
             _drawing = true;
             _raw.Clear();
-            _preview.widthMultiplier = RoadSpecs.Width(Type);
+            RefreshPreviewStyle();
             AddPoint();
         }
 

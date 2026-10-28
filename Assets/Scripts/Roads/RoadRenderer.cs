@@ -14,13 +14,17 @@ namespace CityGame.Roads
         [SerializeField] Material highwayMaterial;
 
         RoadGraph _graph;
-        readonly Dictionary<int, GameObject> _edgeViews = new Dictionary<int, GameObject>();
+        // Список слоёв на ребро: [0] тело, [1..] разметка.
+        readonly Dictionary<int, List<GameObject>> _edgeViews = new Dictionary<int, List<GameObject>>();
         readonly Dictionary<int, GameObject> _nodeViews = new Dictionary<int, GameObject>();
+
+        Material _markingMaterial;
 
         void Awake()
         {
-            if (localMaterial == null) localMaterial = MakeMaterial(RoadSpecs.BodyColor(RoadType.Local));
+            if (localMaterial   == null) localMaterial   = MakeMaterial(RoadSpecs.BodyColor(RoadType.Local));
             if (highwayMaterial == null) highwayMaterial = MakeMaterial(RoadSpecs.BodyColor(RoadType.Highway));
+            _markingMaterial = MakeMaterial(new Color(1f, 1f, 1f, 0.82f));
         }
 
         static Material MakeMaterial(Color color)
@@ -84,19 +88,50 @@ namespace CityGame.Roads
 
         void OnEdgeAdded(RoadEdge edge)
         {
-            Mesh mesh = RoadMeshBuilder.BuildRibbon(edge.Points, RoadSpecs.Width(edge.Type));
-            _edgeViews[edge.Id] = CreateView("Edge " + edge.Id, mesh, MaterialFor(edge.Type),
-                RoadSpecs.SortingOrder(edge.Layer));
+            int order = RoadSpecs.SortingOrder(edge.Layer);
+            var views = new List<GameObject>();
 
+            // Тело дороги
+            views.Add(CreateView("Edge" + edge.Id + "_body",
+                RoadMeshBuilder.BuildRibbon(edge.Points, RoadSpecs.Width(edge.Type)),
+                MaterialFor(edge.Type), order));
+
+            // Разметка (sortingOrder тела + 1)
+            if (edge.Type == RoadType.Local)
+            {
+                // Пунктирная осевая линия
+                views.Add(CreateView("Edge" + edge.Id + "_dash",
+                    RoadMeshBuilder.BuildCenterDashes(edge.Points),
+                    _markingMaterial, order + 1));
+            }
+            else // Highway
+            {
+                float hw = RoadSpecs.Width(RoadType.Highway) * 0.5f; // 0.45
+                float lineW = 0.028f;
+                float edgeOff = hw - lineW * 0.7f;
+                // Две боковые линии
+                views.Add(CreateView("Edge" + edge.Id + "_eL",
+                    RoadMeshBuilder.BuildOffsetRibbon(edge.Points,  edgeOff, lineW),
+                    _markingMaterial, order + 1));
+                views.Add(CreateView("Edge" + edge.Id + "_eR",
+                    RoadMeshBuilder.BuildOffsetRibbon(edge.Points, -edgeOff, lineW),
+                    _markingMaterial, order + 1));
+                // Сплошная осевая
+                views.Add(CreateView("Edge" + edge.Id + "_ctr",
+                    RoadMeshBuilder.BuildOffsetRibbon(edge.Points, 0f, lineW),
+                    _markingMaterial, order + 1));
+            }
+
+            _edgeViews[edge.Id] = views;
             RefreshNode(edge.NodeA);
             RefreshNode(edge.NodeB);
         }
 
         void OnEdgeRemoved(RoadEdge edge)
         {
-            if (_edgeViews.TryGetValue(edge.Id, out GameObject view))
+            if (_edgeViews.TryGetValue(edge.Id, out List<GameObject> views))
             {
-                DestroyView(view);
+                foreach (GameObject v in views) DestroyView(v);
                 _edgeViews.Remove(edge.Id);
             }
 
