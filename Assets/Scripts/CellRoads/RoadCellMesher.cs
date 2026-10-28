@@ -105,6 +105,11 @@ namespace CityGame.CellRoads
                 }
                 else
                 {
+                    // Прямые диагональные прогоны рендерятся одной лентой в AppendDiagonalStrips.
+                    if (!lane.Active && type == JunctionType.Plain &&
+                        (kv.Value == (Side.NE | Side.SW) || kv.Value == (Side.NW | Side.SE)))
+                        continue;
+
                     bool overpass = Side.Count(kv.Value) == 4 && JunctionSpecs.IsOverpass(type);
                     if (overpass)
                     {
@@ -124,9 +129,102 @@ namespace CityGame.CellRoads
                 }
             }
 
+            AppendDiagonalStrips(layers, allMasks, cellSize, widthFraction, typeOf, laneOf);
             if (laneOf != null) AppendStandaloneHighways(layers, entries, laneOf, cellSize);
 
             return layers;
+        }
+
+        /// <summary>
+        /// Прямые диагональные прогоны (NE+SW или NW+SE) рендерим одной лентой вместо цепочки ромбов.
+        /// Лента тянется от угла первой до угла последней клетки прогона, стыкуясь с рукавами соседних узлов.
+        /// </summary>
+        static void AppendDiagonalStrips(RoadLayers L, Dictionary<Vector2Int, int> allMasks,
+            float cellSize, float widthFraction,
+            Func<Vector2Int, JunctionType> typeOf, Func<Vector2Int, HighwayLane> laneOf)
+        {
+            var visited = new HashSet<Vector2Int>();
+            float hw = cellSize * widthFraction * 0.5f;
+            // half-step along diagonal to reach the cell corner (= junction arm tip)
+            float ext = cellSize * 0.5f * Mathf.Sqrt(2f);
+
+            foreach (var kv in allMasks)
+            {
+                if (visited.Contains(kv.Key)) continue;
+                bool isNeSw = kv.Value == (Side.NE | Side.SW);
+                bool isNwSe = kv.Value == (Side.NW | Side.SE);
+                if (!isNeSw && !isNwSe) continue;
+                if (laneOf != null && laneOf(kv.Key).Active) continue;
+                if (typeOf != null && typeOf(kv.Key) != JunctionType.Plain) continue;
+
+                Vector2Int step = isNeSw ? new Vector2Int(1, 1) : new Vector2Int(-1, 1);
+                int straightMask = kv.Value;
+
+                // Идём назад до начала прогона.
+                Vector2Int start = kv.Key;
+                for (;;)
+                {
+                    Vector2Int prev = start - step;
+                    if (!allMasks.TryGetValue(prev, out int pm) || pm != straightMask) break;
+                    if (laneOf != null && laneOf(prev).Active) break;
+                    if (typeOf != null && typeOf(prev) != JunctionType.Plain) break;
+                    start = prev;
+                }
+
+                // Собираем прогон вперёд.
+                var run = new List<Vector2Int>();
+                for (Vector2Int cur = start;;)
+                {
+                    if (!allMasks.TryGetValue(cur, out int cm) || cm != straightMask) break;
+                    if (laneOf != null && laneOf(cur).Active) break;
+                    if (typeOf != null && typeOf(cur) != JunctionType.Plain) break;
+                    run.Add(cur);
+                    visited.Add(cur);
+                    cur += step;
+                }
+
+                if (run.Count == 0) continue;
+
+                // Центры крайних клеток; расширяем до угла-стыка с соседними рукавами.
+                Vector2 stepF = new Vector2(step.x, step.y);
+                Vector2 dn = stepF.normalized;
+                Vector2 fromC = new Vector2((run[0].x + 0.5f) * cellSize, (run[0].y + 0.5f) * cellSize);
+                Vector2 toC   = new Vector2((run[run.Count - 1].x + 0.5f) * cellSize,
+                                            (run[run.Count - 1].y + 0.5f) * cellSize);
+                Vector2 from = fromC - dn * ext;
+                Vector2 to   = toC   + dn * ext;
+
+                // Полотно дороги.
+                Vector2 perp = new Vector2(-dn.y, dn.x);
+                var v = L.Verts[RoadLayers.Road];
+                var t = L.Tris[RoadLayers.Road];
+                int i0 = v.Count;
+                v.Add(new Vector3(from.x - perp.x * hw, from.y - perp.y * hw));
+                v.Add(new Vector3(from.x + perp.x * hw, from.y + perp.y * hw));
+                v.Add(new Vector3(to.x   + perp.x * hw, to.y   + perp.y * hw));
+                v.Add(new Vector3(to.x   - perp.x * hw, to.y   - perp.y * hw));
+                t.Add(i0); t.Add(i0 + 1); t.Add(i0 + 2);
+                t.Add(i0); t.Add(i0 + 2); t.Add(i0 + 3);
+
+                // Прерывистая осевая (по одному штриху на клетку прогона).
+                float mhw = cellSize * MarkingWidth * 0.5f;
+                var mv = L.Verts[RoadLayers.Marking];
+                var mt = L.Tris[RoadLayers.Marking];
+                foreach (Vector2Int cell in run)
+                {
+                    Vector2 cc = new Vector2((cell.x + 0.5f) * cellSize, (cell.y + 0.5f) * cellSize);
+                    float dashHalf = ext * 0.3f;
+                    Vector2 da = cc - dn * dashHalf;
+                    Vector2 db = cc + dn * dashHalf;
+                    int mi = mv.Count;
+                    mv.Add(new Vector3(da.x - perp.x * mhw, da.y - perp.y * mhw));
+                    mv.Add(new Vector3(da.x + perp.x * mhw, da.y + perp.y * mhw));
+                    mv.Add(new Vector3(db.x + perp.x * mhw, db.y + perp.y * mhw));
+                    mv.Add(new Vector3(db.x - perp.x * mhw, db.y - perp.y * mhw));
+                    mt.Add(mi); mt.Add(mi + 1); mt.Add(mi + 2);
+                    mt.Add(mi); mt.Add(mi + 2); mt.Add(mi + 3);
+                }
+            }
         }
 
         static void AppendStandaloneHighways(RoadLayers layers,
