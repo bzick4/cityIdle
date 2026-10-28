@@ -19,12 +19,14 @@ namespace CityGame.Roads
         readonly Dictionary<int, GameObject> _nodeViews = new Dictionary<int, GameObject>();
 
         Material _markingMaterial;
+        Material _medianMaterial;
 
         void Awake()
         {
             if (localMaterial   == null) localMaterial   = MakeMaterial(RoadSpecs.BodyColor(RoadType.Local));
             if (highwayMaterial == null) highwayMaterial = MakeMaterial(RoadSpecs.BodyColor(RoadType.Highway));
-            _markingMaterial = MakeMaterial(new Color(1f, 1f, 1f, 0.82f));
+            _markingMaterial = MakeMaterial(RoadSpecs.MarkingColor);
+            _medianMaterial  = MakeMaterial(RoadSpecs.HighwayMedianColor);
         }
 
         static Material MakeMaterial(Color color)
@@ -106,20 +108,24 @@ namespace CityGame.Roads
             }
             else // Highway
             {
-                float hw = RoadSpecs.Width(RoadType.Highway) * 0.5f; // 0.45
-                float lineW = 0.028f;
-                float edgeOff = hw - lineW * 0.7f;
-                // Две боковые линии
+                float hw    = RoadSpecs.Width(RoadType.Highway) * 0.5f; // 0.45
+                float lineW = 0.030f;
+                float edgeOff = hw - lineW * 0.6f;
+                // Кремовые боковые линии
                 views.Add(CreateView("Edge" + edge.Id + "_eL",
                     RoadMeshBuilder.BuildOffsetRibbon(edge.Points,  edgeOff, lineW),
                     _markingMaterial, order + 1));
                 views.Add(CreateView("Edge" + edge.Id + "_eR",
                     RoadMeshBuilder.BuildOffsetRibbon(edge.Points, -edgeOff, lineW),
                     _markingMaterial, order + 1));
-                // Сплошная осевая
-                views.Add(CreateView("Edge" + edge.Id + "_ctr",
-                    RoadMeshBuilder.BuildOffsetRibbon(edge.Points, 0f, lineW),
-                    _markingMaterial, order + 1));
+                // Жёлтая разделительная осевая (две линии вплотную)
+                float sepOff = lineW * 0.6f;
+                views.Add(CreateView("Edge" + edge.Id + "_mL",
+                    RoadMeshBuilder.BuildOffsetRibbon(edge.Points,  sepOff, lineW),
+                    _medianMaterial, order + 1));
+                views.Add(CreateView("Edge" + edge.Id + "_mR",
+                    RoadMeshBuilder.BuildOffsetRibbon(edge.Points, -sepOff, lineW),
+                    _medianMaterial, order + 1));
             }
 
             _edgeViews[edge.Id] = views;
@@ -178,7 +184,7 @@ namespace CityGame.Roads
 
             Mesh disc = RoadMeshBuilder.BuildDisc(node.Position, widest * 0.5f);
             _nodeViews[nodeId] = CreateView("Node " + nodeId, disc, MaterialFor(widestType),
-                RoadSpecs.SortingOrder(node.Layer) + 1);
+                RoadSpecs.SortingOrder(node.Layer) + 2);
         }
     }
 }

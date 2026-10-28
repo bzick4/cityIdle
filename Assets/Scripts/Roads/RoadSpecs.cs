@@ -29,12 +29,15 @@ namespace CityGame.Roads
             return type == RoadType.Highway ? RoadLayer.Highway : RoadLayer.Ground;
         }
 
+        /// <summary>Желтый цвет разделительной полосы шоссе.</summary>
+        public static readonly Color HighwayMedianColor = new Color32(0xF2, 0xB8, 0x4B, 0xFF);
+        /// <summary>Кремовый цвет разметки (пунктир, боковые линии).</summary>
+        public static readonly Color MarkingColor = new Color32(0xE9, 0xE6, 0xDA, 0xFF);
+
         public static Color BodyColor(RoadType type)
         {
-            // Цвета из макета: тёмно-серая местная дорога и жёлтое шоссе.
-            return type == RoadType.Highway
-                ? new Color(0.949f, 0.722f, 0.294f, 1f)
-                : new Color(0.231f, 0.271f, 0.322f, 1f);
+            // Оба типа дорог — один и тот же тёмный корпус. Шоссе отличается шириной и жёлтой осевой.
+            return new Color(0.231f, 0.271f, 0.322f, 1f);
         }
 
         public static int SortingOrder(RoadLayer layer)
