@@ -76,9 +76,9 @@ namespace CityGame.CellRoads
 
         readonly List<Vector2Int> _path = new List<Vector2Int>();
         bool _drawing;
+        bool _axisKnown;
+        bool _axisHorizontal;
         bool _previewDirty;
-        Vector2Int _startCell;
-        Vector2 _startTangent;
 
         GameObject _preview;
         Material _previewMaterial;
@@ -150,8 +150,7 @@ namespace CityGame.CellRoads
                 if (!Allowed(start)) return;
 
                 _drawing = true;
-                _startCell = start;
-                _startTangent = GetStartTangent(start);
+                _axisKnown = false;
                 _path.Clear();
                 _path.Add(start);
                 _previewDirty = true;
@@ -163,7 +162,7 @@ namespace CityGame.CellRoads
                 return;
             }
 
-            SetEnd(PointerWorld());
+            Follow(ToCell(PointerWorld()));
             if (_previewDirty) RedrawPreview();
         }
 
@@ -174,60 +173,59 @@ namespace CityGame.CellRoads
             return new Vector2(p.x, p.y);
         }
 
-        /// <summary>Пересчитывает путь как кубический безье от начала к точке под пальцем.</summary>
-        void SetEnd(Vector2 world)
+        /// <summary>Двигает конец дороги к клетке под пальцем, строго по осям.</summary>
+        void Follow(Vector2Int target)
         {
-            var cells = RasterizeBezier(CellCenter(_startCell), _startTangent, world);
-            _path.Clear();
-            var seen = new HashSet<Vector2Int>();
-            foreach (var cell in cells)
+            for (int guard = 0; guard < 128; guard++)
             {
-                if (!Allowed(cell) || seen.Contains(cell)) break;
-                _path.Add(cell);
-                seen.Add(cell);
+                Vector2Int tail = _path[_path.Count - 1];
+                if (tail == target) return;
+
+                int idx = _path.IndexOf(target);
+                if (idx >= 0)
+                {
+                    _path.RemoveRange(idx + 1, _path.Count - idx - 1);
+                    _axisKnown = false;
+                    if (_path.Count >= 2)
+                    {
+                        _axisHorizontal = _path[_path.Count - 1].y == _path[_path.Count - 2].y;
+                        _axisKnown = true;
+                    }
+                    _previewDirty = true;
+                    return;
+                }
+
+                Vector2Int d = target - tail;
+                if (!_axisKnown)
+                {
+                    _axisHorizontal = Mathf.Abs(d.x) >= Mathf.Abs(d.y);
+                    _axisKnown = true;
+                }
+
+                int along = _axisHorizontal ? d.x : d.y;
+                int across = _axisHorizontal ? d.y : d.x;
+
+                bool turn = across != 0 && (along == 0 ||
+                    (Mathf.Abs(across) >= TurnThreshold && Mathf.Abs(across) > Mathf.Abs(along)));
+                if (turn)
+                {
+                    _axisHorizontal = !_axisHorizontal;
+                    along = _axisHorizontal ? d.x : d.y;
+                }
+
+                if (along == 0) return;
+
+                Vector2Int step = _axisHorizontal
+                    ? new Vector2Int(along > 0 ? 1 : -1, 0)
+                    : new Vector2Int(0, along > 0 ? 1 : -1);
+                Vector2Int next = tail + step;
+
+                if (!Allowed(next)) return;
+                if (_path.Contains(next)) return;
+
+                _path.Add(next);
+                _previewDirty = true;
             }
-            _previewDirty = true;
-        }
-
-        /// <summary>Растеризует кубический безье от start до end в клетки сетки.</summary>
-        List<Vector2Int> RasterizeBezier(Vector2 start, Vector2 t0, Vector2 end)
-        {
-            float dist = Vector2.Distance(start, end);
-            if (dist < 0.01f) return new List<Vector2Int> { ToCell(start) };
-
-            Vector2 chord = (end - start).normalized;
-            if (t0 == Vector2.zero) t0 = chord;
-            if (Vector2.Dot(t0, chord) < -0.1f)
-                t0 = Vector2.Lerp(chord, t0, 0.3f).normalized;
-
-            float h = dist * 0.38f;
-            Vector2 p1 = start + t0 * h;
-            Vector2 p2 = end - chord * h;
-
-            int steps = Mathf.Clamp(Mathf.RoundToInt(dist / (CellSize * 0.15f)), 4, 300);
-            var result = new List<Vector2Int>(steps);
-            Vector2Int prev = new Vector2Int(int.MinValue, int.MinValue);
-            for (int i = 0; i <= steps; i++)
-            {
-                float t = i / (float)steps;
-                float u = 1f - t;
-                Vector2 pt = u * u * u * start + 3f * u * u * t * p1 + 3f * u * t * t * p2 + t * t * t * end;
-                Vector2Int cell = ToCell(pt);
-                if (cell != prev) { result.Add(cell); prev = cell; }
-            }
-            return result;
-        }
-
-        /// <summary>Возвращает направление продолжения дороги от мёртвого конца клетки.</summary>
-        Vector2 GetStartTangent(Vector2Int cell)
-        {
-            int mask = _map.Mask(cell);
-            if (Side.Count(mask) != 1) return Vector2.zero;
-            if ((mask & Side.N) != 0) return Vector2.down;
-            if ((mask & Side.S) != 0) return Vector2.up;
-            if ((mask & Side.E) != 0) return Vector2.left;
-            if ((mask & Side.W) != 0) return Vector2.right;
-            return Vector2.zero;
         }
 
         /// <summary>Палец отпущен: строить пока не строим, ждём подтверждения.</summary>
