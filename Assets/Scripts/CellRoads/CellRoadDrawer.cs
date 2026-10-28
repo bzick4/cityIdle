@@ -206,8 +206,9 @@ namespace CityGame.CellRoads
                     return;
                 }
 
-                Vector2Int raw = target - tail;
-                Vector2Int snap = Snap8(raw);
+                // Snap считаем от СТАРТА, не от хвоста: так угол всего жеста стабильнее.
+                Vector2Int rawFromStart = target - _path[0];
+                Vector2Int snap = Snap8(rawFromStart);
 
                 if (!_dirKnown)
                 {
@@ -216,18 +217,20 @@ namespace CityGame.CellRoads
                 }
                 else if (snap != _dir)
                 {
-                    // Нормализуем _dir для корректного расчёта вдоль/поперёк.
+                    // Переключаем направление, если поперечное отклонение жеста ≥ TurnThreshold.
                     Vector2 dirF = new Vector2(_dir.x, _dir.y).normalized;
-                    float along = raw.x * dirF.x + raw.y * dirF.y;
-                    Vector2 acrossVec = new Vector2(raw.x, raw.y) - dirF * along;
+                    Vector2 rawF = new Vector2(rawFromStart.x, rawFromStart.y);
+                    float along = Vector2.Dot(rawF, dirF);
+                    Vector2 acrossVec = rawF - dirF * along;
                     if (acrossVec.magnitude >= TurnThreshold)
                         _dir = snap;
                 }
 
-                // Останавливаемся, если цель "позади" или "на уровне" текущего направления.
+                // Останавливаемся, если хвост прошёл цель в текущем направлении.
                 {
                     Vector2 dirF = new Vector2(_dir.x, _dir.y).normalized;
-                    float along = raw.x * dirF.x + raw.y * dirF.y;
+                    Vector2Int rawTail = target - tail;
+                    float along = rawTail.x * dirF.x + rawTail.y * dirF.y;
                     if (along <= 0f) return;
                 }
 
