@@ -87,24 +87,34 @@ namespace CityGame.Roads
                 while (t < segLen)
                 {
                     float phase = (dist + t) % period;
+                    float remaining; // сколько ещё идти до конца текущей фазы
                     if (phase < dashLen)
                     {
-                        float end = Mathf.Min(t + (dashLen - phase), segLen);
-                        Vector2 p0 = a + dir * t;
-                        Vector2 p1 = a + dir * end;
-                        int b0 = verts.Count;
-                        verts.Add(new Vector3(p0.x + norm.x * halfW, p0.y + norm.y * halfW));
-                        verts.Add(new Vector3(p0.x - norm.x * halfW, p0.y - norm.y * halfW));
-                        verts.Add(new Vector3(p1.x + norm.x * halfW, p1.y + norm.y * halfW));
-                        verts.Add(new Vector3(p1.x - norm.x * halfW, p1.y - norm.y * halfW));
-                        tris.Add(b0);     tris.Add(b0 + 2); tris.Add(b0 + 1);
-                        tris.Add(b0 + 1); tris.Add(b0 + 2); tris.Add(b0 + 3);
-                        t = end;
+                        remaining = dashLen - phase;
+                        if (remaining > 0.001f)
+                        {
+                            float end = Mathf.Min(t + remaining, segLen);
+                            Vector2 p0 = a + dir * t;
+                            Vector2 p1 = a + dir * end;
+                            int b0 = verts.Count;
+                            verts.Add(new Vector3(p0.x + norm.x * halfW, p0.y + norm.y * halfW));
+                            verts.Add(new Vector3(p0.x - norm.x * halfW, p0.y - norm.y * halfW));
+                            verts.Add(new Vector3(p1.x + norm.x * halfW, p1.y + norm.y * halfW));
+                            verts.Add(new Vector3(p1.x - norm.x * halfW, p1.y - norm.y * halfW));
+                            tris.Add(b0);     tris.Add(b0 + 2); tris.Add(b0 + 1);
+                            tris.Add(b0 + 1); tris.Add(b0 + 2); tris.Add(b0 + 3);
+                        }
+                        else
+                        {
+                            // phase ≈ dashLen: пропускаем вырожденную черточку, прыгаем до гэпа
+                            remaining = period - phase;
+                        }
                     }
                     else
                     {
-                        t += period - phase;
+                        remaining = period - phase;
                     }
+                    t += Mathf.Max(remaining, 0.001f);
                 }
                 dist += segLen;
             }
