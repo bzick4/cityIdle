@@ -18,9 +18,6 @@ namespace CityGame.CellRoads
         public float CellSize = 1f;
         [Range(0.2f, 0.9f)] public float WidthFraction = 0.5f;
 
-        [Tooltip("Насколько дальше в сторону нужно увести палец, чтобы дорога повернула, в клетках")]
-        public int TurnThreshold = 2;
-
         public Func<Vector2, bool> IsPointerBlocked;
 
         /// <summary>Множитель цены клетки дороги (мост на море дороже).</summary>
@@ -196,34 +193,17 @@ namespace CityGame.CellRoads
                 if (idx >= 0)
                 {
                     _path.RemoveRange(idx + 1, _path.Count - idx - 1);
-                    _dirKnown = false;
-                    if (_path.Count >= 2)
-                    {
-                        _dir = Snap8(_path[_path.Count - 1] - _path[_path.Count - 2]);
-                        _dirKnown = true;
-                    }
                     _previewDirty = true;
                     return;
                 }
 
-                // Snap считаем от СТАРТА, не от хвоста: так угол всего жеста стабильнее.
-                Vector2Int rawFromStart = target - _path[0];
-                Vector2Int snap = Snap8(rawFromStart);
-
+                // Направление фиксируется один раз по вектору от старта жеста и больше не меняется.
                 if (!_dirKnown)
                 {
+                    Vector2Int snap = Snap8(target - _path[0]);
+                    if (snap == Vector2Int.zero) return;
                     _dir = snap;
                     _dirKnown = true;
-                }
-                else if (snap != _dir)
-                {
-                    // Переключаем направление, если поперечное отклонение жеста ≥ TurnThreshold.
-                    Vector2 dirF = new Vector2(_dir.x, _dir.y).normalized;
-                    Vector2 rawF = new Vector2(rawFromStart.x, rawFromStart.y);
-                    float along = Vector2.Dot(rawF, dirF);
-                    Vector2 acrossVec = rawF - dirF * along;
-                    if (acrossVec.magnitude >= TurnThreshold)
-                        _dir = snap;
                 }
 
                 // Останавливаемся, если хвост прошёл цель в текущем направлении.
@@ -235,7 +215,6 @@ namespace CityGame.CellRoads
                 }
 
                 Vector2Int next = tail + _dir;
-
                 if (!Allowed(next)) return;
                 if (_path.Contains(next)) return;
 
