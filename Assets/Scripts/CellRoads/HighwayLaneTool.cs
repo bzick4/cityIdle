@@ -46,6 +46,7 @@ namespace CityGame.CellRoads
         public IReadOnlyList<Vector2Int> Path => _path;
         public float Money => _economy != null ? _economy.Money : 0f;
         public float StrokeWidth => OneWayMode ? 0.5f : 0.88f;
+        public string LengthLabel => _path.Count + " кл.";
         Camera IRoadStroke.Cam => Cam;
         public float StrokeCost => Evaluate(null, false);
         public event Action<IReadOnlyList<Vector2Int>, float> Committed;

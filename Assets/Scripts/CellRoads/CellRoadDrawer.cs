@@ -34,6 +34,7 @@ namespace CityGame.CellRoads
         public bool Pending => _pending;
         public string Title => "Дорога";
         public string Problem => null;
+        public string LengthLabel => _path.Count + " кл.";
         public IReadOnlyList<Vector2Int> Path => _path;
         public float Money => _economy != null ? _economy.Money : 0f;
         public float StrokeCost => PathCost();

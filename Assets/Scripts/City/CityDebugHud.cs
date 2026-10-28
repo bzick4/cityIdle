@@ -425,7 +425,8 @@ namespace CityGame.Buildings
             GUI.Label(new Rect(_strokeRect.x + 14f, _strokeRect.y + 8f, _strokeRect.width - 28f, 26f),
                 "ПОСТРОИТЬ: " + stroke.Title.ToUpper(), _lblMenuTitle);
             GUI.Label(new Rect(_strokeRect.x + 14f, _strokeRect.y + 34f, _strokeRect.width - 28f, 22f),
-                "Длина " + stroke.Path.Count + " кл. · Стоимость " + Mathf.RoundToInt(cost) +
+                (string.IsNullOrEmpty(stroke.LengthLabel) ? "" : "Длина " + stroke.LengthLabel + " · ") +
+                "Стоимость " + Mathf.RoundToInt(cost) +
                 (problem != null ? "" : cost <= stroke.Money + 0.001f ? "" : " · не хватает денег"), _lblSmall);
             if (problem != null)
                 GUI.Label(new Rect(_strokeRect.x + 14f, _strokeRect.y + 52f, _strokeRect.width - 28f, 56f), problem, _lblSmall);

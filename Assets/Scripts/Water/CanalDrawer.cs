@@ -50,6 +50,7 @@ namespace CityGame.Water
         public IReadOnlyList<Vector2Int> Path => _path;
         public float Money => _economy != null ? _economy.Money : 0f;
         public float StrokeWidth => 0.8f;
+        public string LengthLabel => Path.Count + " кл.";
         Camera IRoadStroke.Cam => Cam;
         public float StrokeCost { get { Evaluate(false, out float t, out _, out _); return t; } }
         public event Action<IReadOnlyList<Vector2Int>, float> Committed;

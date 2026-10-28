@@ -11,11 +11,16 @@ namespace CityGame.Save
     [Serializable] public class HexSave { public int q, r; }
     [Serializable] public class CellSave { public int x, y; }
 
+    /// <summary>Узел свободного графа дорог.</summary>
+    [Serializable] public class FreeRoadNodeSave { public int id; public float x, y; }
+    /// <summary>Ребро свободного графа дорог. points — плоский массив x0,y0,x1,y1,…</summary>
+    [Serializable] public class FreeRoadEdgeSave { public int id, nodeA, nodeB, type, oneWay; public float[] points; }
+
     /// <summary>Всё, что нужно для восстановления города. Деревья, машины и довольство считаются заново.</summary>
     [Serializable]
     public class SaveData
     {
-        public int version = 1;
+        public int version = 2;
         public int seed;
         public float money;
         public float camX, camY, camWidth;
@@ -28,12 +33,16 @@ namespace CityGame.Save
         public List<CellSave> buses = new List<CellSave>();
         /// <summary>Час суток 0..24. Меньше нуля: в старых сохранениях нет, берём час старта.</summary>
         public float dayHour = -1f;
+        /// <summary>Узлы свободного графа дорог (версия 2+).</summary>
+        public List<FreeRoadNodeSave> freeNodes = new List<FreeRoadNodeSave>();
+        /// <summary>Рёбра свободного графа дорог (версия 2+).</summary>
+        public List<FreeRoadEdgeSave> freeEdges = new List<FreeRoadEdgeSave>();
     }
 
     /// <summary>Файл сохранения в папке данных приложения. Одно сохранение: новая игра его перезаписывает.</summary>
     public static class SaveSystem
     {
-        public const int CurrentVersion = 1;
+        public const int CurrentVersion = 2;
 
         static string PathFile => Path.Combine(Application.persistentDataPath, "city_save.json");
 
@@ -48,7 +57,8 @@ namespace CityGame.Save
             {
                 if (!File.Exists(PathFile)) return false;
                 data = JsonUtility.FromJson<SaveData>(File.ReadAllText(PathFile));
-                return data != null && data.version == CurrentVersion;
+                // Версия 1: клеточные дороги (игнорируем). Версии выше текущей не читаем.
+                return data != null && data.version >= 1 && data.version <= CurrentVersion;
             }
             catch (Exception e)
             {

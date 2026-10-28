@@ -26,6 +26,9 @@ namespace CityGame.CellRoads
         /// <summary>Почему построить нельзя (null, если можно). Деньги сюда не входят.</summary>
         string Problem { get; }
 
+        /// <summary>Текст длины штриха для диалога (например «12 кл.» или «3.5 м.»). Пустая строка — не показывать.</summary>
+        string LengthLabel { get; }
+
         void Confirm();
         void Cancel();
         event Action<IReadOnlyList<Vector2Int>, float> Committed;
