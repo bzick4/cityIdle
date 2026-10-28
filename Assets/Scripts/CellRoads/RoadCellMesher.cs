@@ -720,9 +720,11 @@ namespace CityGame.CellRoads
 
             if (count == 2)
             {
-                // Для прямых проходов (N+S, E+W) рукава полностью перекрывают центр,
-                // но при тупом угле (например, N+NE) остаётся треугольный зазор — заполняем диском.
-                AddDisc(v, t, c, hw);
+                // Прямые проходы (N+S, E+W, NE+SW, NW+SE): рукава перекрывают центр — диск не нужен.
+                // Тупой угол (например, N+NE): треугольный зазор — заполняем диском.
+                bool straight = mask == (Side.N | Side.S) || mask == (Side.E | Side.W)
+                             || mask == (Side.NE | Side.SW) || mask == (Side.NW | Side.SE);
+                if (!straight) AddDisc(v, t, c, hw);
                 return;
             }
 

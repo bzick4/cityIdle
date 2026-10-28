@@ -288,15 +288,44 @@ namespace CityGame.CellRoads
         {
             _previewDirty = false;
             ClearPreview();
+            if (_path.Count == 0) return;
 
-            Dictionary<Vector2Int, int> masks = CellRoadMap.MasksOf(_path);
+            Mesh mesh;
+            // Диагональ: один прямой квад от первой до последней клетки — без зигзага по клеткам.
+            if (_path.Count >= 2 && _dirKnown && _dir.x != 0 && _dir.y != 0)
+            {
+                mesh = BuildStripMesh(CellCenter(_path[0]), CellCenter(_path[_path.Count - 1]),
+                                      WidthFraction * CellSize * 0.5f);
+            }
+            else
+            {
+                Dictionary<Vector2Int, int> masks = CellRoadMap.MasksOf(_path);
+                mesh = RoadCellMesher.Build(masks, null, null, CellSize, WidthFraction).ToMesh(RoadLayers.Road);
+            }
+
             _preview = new GameObject("RoadPreview");
             _preview.transform.SetParent(transform, false);
-            _preview.AddComponent<MeshFilter>().sharedMesh =
-                RoadCellMesher.Build(masks, null, null, CellSize, WidthFraction).ToMesh(RoadLayers.Road);
+            _preview.AddComponent<MeshFilter>().sharedMesh = mesh;
             var r = _preview.AddComponent<MeshRenderer>();
             r.sharedMaterial = _previewMaterial;
             r.sortingOrder = 16;
+        }
+
+        static Mesh BuildStripMesh(Vector2 from, Vector2 to, float hw)
+        {
+            Vector2 d = to - from;
+            if (d.sqrMagnitude < 0.0001f) return new Mesh();
+            d = d.normalized;
+            Vector2 perp = new Vector2(-d.y, d.x);
+            var mesh = new Mesh();
+            mesh.SetVertices(new List<Vector3>
+            {
+                from - perp * hw, from + perp * hw,
+                to   + perp * hw, to   - perp * hw
+            });
+            mesh.SetTriangles(new[] { 0, 1, 2, 0, 2, 3 }, 0);
+            mesh.RecalculateBounds();
+            return mesh;
         }
 
         void ClearPreview()
