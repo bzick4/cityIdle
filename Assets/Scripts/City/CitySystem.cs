@@ -381,7 +381,8 @@ namespace CityGame.Buildings
             // Свободные дороги: используем Roads.RoadDrawer из RoadSystem.
             FreeRoadDrawer = _roads.Drawer;
             FreeRoadDrawer.Economy = Economy;
-            FreeRoadDrawer.CostFactorAt = Biomes.RoadCostFactor;
+            FreeRoadDrawer.CostFactorAt = p => Biomes.RoadCostFactor(
+                new Vector2Int(Mathf.FloorToInt(p.x / CellSize), Mathf.FloorToInt(p.y / CellSize)));
             FreeRoadDrawer.CanBuildAt = Sectors.IsOpenAt;
             FreeRoadDrawer.enabled = false; // включается в Select()
 
