@@ -214,17 +214,21 @@ namespace CityGame.CellRoads
                     _dir = snap;
                     _dirKnown = true;
                 }
-                else
+                else if (snap != _dir)
                 {
-                    // Переключаем направление, если отклонение сильное (TurnThreshold клеток в сторону).
-                    int along = raw.x * _dir.x + raw.y * _dir.y;
-                    int acrossX = raw.x - _dir.x * along;
-                    int acrossY = raw.y - _dir.y * along;
-                    int acrossMag = Mathf.Abs(acrossX) + Mathf.Abs(acrossY);
-                    if (acrossMag >= TurnThreshold && acrossMag > Mathf.Abs(along))
-                    {
+                    // Нормализуем _dir для корректного расчёта вдоль/поперёк.
+                    Vector2 dirF = new Vector2(_dir.x, _dir.y).normalized;
+                    float along = raw.x * dirF.x + raw.y * dirF.y;
+                    Vector2 acrossVec = new Vector2(raw.x, raw.y) - dirF * along;
+                    if (acrossVec.magnitude >= TurnThreshold)
                         _dir = snap;
-                    }
+                }
+
+                // Останавливаемся, если цель "позади" или "на уровне" текущего направления.
+                {
+                    Vector2 dirF = new Vector2(_dir.x, _dir.y).normalized;
+                    float along = raw.x * dirF.x + raw.y * dirF.y;
+                    if (along <= 0f) return;
                 }
 
                 Vector2Int next = tail + _dir;
