@@ -176,6 +176,8 @@ namespace CityGame.Buildings
             var px = new Color[N * N];
             Color tint = kind == ServiceKind.Ambulance ? new Color32(0xE7, 0x79, 0x79, 0xFF) :
                          kind == ServiceKind.Police ? new Color32(0x73, 0x9A, 0xD2, 0xFF) :
+                         kind == ServiceKind.PowerPlant ? new Color32(0xE9, 0xB2, 0x2F, 0xFF) :
+                         kind == ServiceKind.WaterTower ? new Color32(0x4F, 0xA3, 0xE0, 0xFF) :
                          new Color32(0xEF, 0xA0, 0x57, 0xFF);
             Fill(px, Circle(32, 32, 29), tint);
             Fill(px, Circle(32, 32, 24), White);
@@ -183,6 +185,20 @@ namespace CityGame.Buildings
             {
                 Fill(px, RBox(28, 13, 36, 51, 2), tint);
                 Fill(px, RBox(13, 28, 51, 36, 2), tint);
+            }
+            else if (kind == ServiceKind.PowerPlant)
+            {
+                // Молния.
+                Fill(px, Tri(36, 8, 18, 36, 31, 36), tint);
+                Fill(px, Tri(28, 56, 46, 28, 33, 28), tint);
+                Fill(px, Box(27, 28, 38, 38), tint);
+            }
+            else if (kind == ServiceKind.WaterTower)
+            {
+                // Капля.
+                Fill(px, Tri(32, 8, 18, 34, 46, 34), tint);
+                Fill(px, Circle(32, 40, 13), tint);
+                Fill(px, Circle(27, 42, 3), White);
             }
             else if (kind == ServiceKind.Police)
             {

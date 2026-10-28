@@ -11,7 +11,7 @@ namespace CityGame.CellRoads
     /// Строит отдельное шоссе или обычную одностороннюю дорогу по сетке.
     /// Оба типа можно продолжать от своего свободного конца; шоссе также кладётся поверх обычной дороги.
     /// </summary>
-    public sealed class HighwayLaneTool : MonoBehaviour
+    public sealed class HighwayLaneTool : MonoBehaviour, IRoadStroke
     {
         public Camera Cam;
         public float CellSize = 1f;
@@ -35,6 +35,63 @@ namespace CityGame.CellRoads
         bool _horizontal;
         LineRenderer _preview;
         Material _previewMaterial;
+        bool _pending;
+        bool _trimmed;
+        string _problem;
+        public string Problem => _problem;
+
+        public bool Drawing => _drawing;
+        public bool Pending => _pending;
+        public string Title => OneWayMode ? "Односторонняя дорога" : "Шоссе";
+        public IReadOnlyList<Vector2Int> Path => _path;
+        public float Money => _economy != null ? _economy.Money : 0f;
+        public float StrokeWidth => OneWayMode ? 0.5f : 0.88f;
+        Camera IRoadStroke.Cam => Cam;
+        public float StrokeCost => Evaluate(null, false);
+        public event Action<IReadOnlyList<Vector2Int>, float> Committed;
+
+        public void Confirm()
+        {
+            if (!_pending || _problem != null) return;
+            _pending = false;
+            Commit();
+        }
+
+        public void Cancel()
+        {
+            _problem = null;
+            _pending = false;
+            _drawing = false;
+            _path.Clear();
+            if (_preview != null) _preview.enabled = false;
+        }
+
+        /// <summary>Цена маршрута по клеткам. Если respectMoney, считает только то, на что хватает денег.</summary>
+        float Evaluate(List<Vector2Int> accepted, bool respectMoney)
+        {
+            float unitCost = _economy != null
+                ? (OneWayMode ? _economy.RoadCostPerCell : _economy.HighwayCostPerCell)
+                : 0f;
+            float total = 0f;
+            bool closed = Closed;
+            for (int i = 0; i < _path.Count; i++)
+            {
+                Vector2Int cell = _path[i];
+                float factor = CostFactorAt != null ? CostFactorAt(cell) : 1f;
+                HighwayLane lane = _map.LaneAt(cell);
+                bool bridge = _map.IsCrossing(_path, i); // мост строится заново, он не бесплатный
+                bool existingLane = lane.Active && lane.OneWay == OneWayMode && !bridge;
+                bool highwayConnection = OneWayMode && !bridge &&
+                    ((lane.Active && !lane.OneWay) || (!lane.Active && _map.Mask(cell) != 0));
+                bool closingCell = closed && i == _path.Count - 1; // клетка замыкания уже оплачена как первая
+                float cost = existingLane || highwayConnection || closingCell ? 0f : unitCost * factor;
+                if (respectMoney && _economy != null && _economy.Money < total + cost) break;
+                if (accepted != null) accepted.Add(cell);
+                total += cost;
+            }
+
+            return total;
+        }
 
         public void Bind(CellRoadMap map, CityModel city = null, SectorMap sectors = null, Economy economy = null)
         {
@@ -78,10 +135,7 @@ namespace CityGame.CellRoads
 
         void OnDisable()
         {
-            if (_drawing && _path.Count > 1) Commit();
-            _drawing = false;
-            _path.Clear();
-            if (_preview != null) _preview.enabled = false;
+            Cancel();
         }
 
         void OnDestroy()
@@ -102,6 +156,7 @@ namespace CityGame.CellRoads
 
             if (PointerInput.Gesture)
             {
+                _pending = false;
                 _drawing = false;
                 _path.Clear();
                 if (_preview != null) _preview.enabled = false;
@@ -137,6 +192,7 @@ namespace CityGame.CellRoads
                     return;
                 }
 
+                _pending = false;
                 _drawing = true;
                 _path.Clear();
                 _path.Add(start);
@@ -146,7 +202,7 @@ namespace CityGame.CellRoads
 
             if (!_drawing) return;
             if (PointerInput.Pressed && !PointerInput.Up) Follow(ToCell(PointerInput.Position));
-            if (PointerInput.Up) Commit();
+            if (PointerInput.Up) EndStroke();
         }
 
         /// <summary>Минимум клеток до замыкания кольца: периметр квадрата 3×3.</summary>
@@ -299,12 +355,24 @@ namespace CityGame.CellRoads
             }
         }
 
-        void Commit()
+        string FailMessage(List<Vector2Int> accepted)
+        {
+            return accepted.Count < 2
+                ? "Нужно провести маршрут минимум через две клетки"
+                : _map.LaneAt(accepted[0]).Active && _map.LaneAt(accepted[accepted.Count - 1]).Active
+                    ? "Эти концы не соединить: направления встречные. Веди от выезда одной полосы ко въезду другой"
+                    : OneWayMode
+                        ? "Соединять можно выезд одной дороги с въездом другой. Чтобы пересечь дорогу мостом, веди прямо и дальше за неё. Развилка: от конца или начала обычной дороги проведи вторую полосу по той же дороге и разведи в сторону"
+                        : "Соединять можно выезд одной полосы с въездом другой, либо примыкать сбоку к середине шоссе";
+        }
+
+        /// <summary>Палец отпущен: подготавливаем маршрут и ждём подтверждения.</summary>
+        void EndStroke()
         {
             _drawing = false;
             int pathBefore = _path.Count;
             if (!Closed) TrimDanglingBridge();
-            bool trimmed = _path.Count < pathBefore;
+            _trimmed = _path.Count < pathBefore;
             // Отпустили палец рядом с началом: замыкаем кольцо сами, не заставляя попадать точно в первую клетку.
             if (!Closed && _path.Count >= MinRingCells && !_map.LaneAt(_path[0]).Active &&
                 !_map.LaneAt(_path[_path.Count - 1]).Active)
@@ -313,27 +381,27 @@ namespace CityGame.CellRoads
                 if (Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) == 1) _path.Add(b);
             }
 
-            float unitCost = _economy != null
-                ? (OneWayMode ? _economy.RoadCostPerCell : _economy.HighwayCostPerCell)
-                : 0f;
-            var accepted = new List<Vector2Int>();
-            float total = 0f;
-            bool closed = Closed;
-            for (int i = 0; i < _path.Count; i++)
+            if (_path.Count < 2)
             {
-                Vector2Int cell = _path[i];
-                float factor = CostFactorAt != null ? CostFactorAt(cell) : 1f;
-                HighwayLane lane = _map.LaneAt(cell);
-                bool bridge = _map.IsCrossing(_path, i); // мост строится заново, он не бесплатный
-                bool existingLane = lane.Active && lane.OneWay == OneWayMode && !bridge;
-                bool highwayConnection = OneWayMode && !bridge &&
-                    ((lane.Active && !lane.OneWay) || (!lane.Active && _map.Mask(cell) != 0));
-                bool closingCell = closed && i == _path.Count - 1; // клетка замыкания уже оплачена как первая
-                float cost = existingLane || highwayConnection || closingCell ? 0f : unitCost * factor;
-                if (_economy != null && _economy.Money < total + cost) break;
-                accepted.Add(cell);
-                total += cost;
+                Commit(); // сообщит, что нужно минимум две клетки
+                return;
             }
+
+            // Пробная постройка: сразу видно, получится ли такой маршрут.
+            var all = new List<Vector2Int>();
+            Evaluate(all, false);
+            bool fits = OneWayMode ? _map.DryRunPath(all, true) : _map.DryRunPath(all, false);
+            _problem = fits ? null : FailMessage(all);
+            _pending = true;
+            UpdatePreview();
+        }
+
+        void Commit()
+        {
+            _drawing = false;
+            bool trimmed = _trimmed;
+            var accepted = new List<Vector2Int>();
+            float total = Evaluate(accepted, true);
             int bridges = 0;
             for (int i = 0; i < accepted.Count; i++)
                 if (_map.IsCrossing(accepted, i)) bridges++;
@@ -341,14 +409,9 @@ namespace CityGame.CellRoads
                 ? _map.SetOneWayPath(accepted)
                 : _map.SetHighwayPath(accepted, true));
             if (ok && total > 0f && _economy != null) _economy.TrySpend(total);
+            if (ok) Committed?.Invoke(accepted, total);
             bool ringBuilt = ok && CellRoadMap.IsClosedPath(accepted);
-            Message?.Invoke(!ok ? (accepted.Count < 2
-                    ? "Нужно провести маршрут минимум через две клетки"
-                    : _map.LaneAt(accepted[0]).Active && _map.LaneAt(accepted[accepted.Count - 1]).Active
-                        ? "Эти концы не соединить: направления встречные. Веди от выезда одной полосы ко въезду другой"
-                        : OneWayMode
-                            ? "Соединять можно выезд одной дороги с въездом другой. Чтобы пересечь дорогу мостом, веди прямо и дальше за неё. Развилка: от конца или начала обычной дороги проведи вторую полосу по той же дороге и разведи в сторону"
-                            : "Соединять можно выезд одной полосы с въездом другой, либо примыкать сбоку к середине шоссе") :
+            Message?.Invoke(!ok ? FailMessage(accepted) :
                 _map.LastForkBuilt ? (_map.LastForkReversed
                     ? "Развилка построена · вторая полоса идёт навстречу первой, общий участок стал обычной дорогой"
                     : "Развилка построена · общий участок стал обычной двухполосной дорогой") :

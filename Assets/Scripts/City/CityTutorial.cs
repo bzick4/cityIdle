@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CityGame.Roads;
+using CityGame.Sectors;
 using UnityEngine;
 
 namespace CityGame.Buildings
@@ -29,6 +30,8 @@ namespace CityGame.Buildings
             public int Need = 1;       // насколько Metric должен вырасти с начала шага
             public int Base;
             public string Anchor;
+            public bool HasSwatch;
+            public Color Swatch;       // цвет биома в углу панели
         }
 
         static readonly Color Amber = new Color32(0xF2, 0xB8, 0x4B, 0xFF);
@@ -121,10 +124,87 @@ namespace CityGame.Buildings
             _steps.Add(new Step
             {
                 Title = "Что ещё есть",
-                Why = "Шоссе и односторонние дороги ускоряют потоки. В горах дороги идут тоннелями. В море дороги становятся мостами, а канал и порт дают доход от кораблей. Автобусная станция (одна на сектор) пускает автобусы. Ночью зажигается свет.",
+                Why = "Первые три здания работают сразу, а дальше каждому нужны ток и вода: ставь электростанцию и водонапорную башню в разделе ЭНЕРГИЯ рядом с районами (одна тянет 30 клеток). Без них здание не платит налог и показывает значок. Шоссе и односторонние дороги ускоряют потоки. В горах дороги идут тоннелями. В море дороги становятся мостами, а канал и порт дают доход от кораблей. Автобусная станция (одна на сектор) пускает автобусы. Ночью зажигается свет.",
                 Do = "Нажми «Готово». Обучение можно повторить кнопкой ОБУЧ. в панели с полоски.",
                 Anchor = "shop"
             });
+        }
+
+        // ---------------------------------------------------------------
+        // Уроки по биомам: рассказываем о каждом биоме один раз, когда он впервые открыт на карте.
+
+        const string BiomeSeenKey = "HexaCity.BiomeSeen";
+        Step _lesson;
+        Biome _lessonBiome;
+        float _lessonCheck;
+
+        static string BiomeWhy(Biome b)
+        {
+            switch (b)
+            {
+                case Biome.Snow:
+                    return "Здания стоят на 20% дешевле. Бонуса леса нет, зато хорошее место для дешёвого жилья и промзоны.";
+                case Biome.Desert:
+                    return "Здания тоже на 20% дешевле. Деревьев и налогового бонуса нет, просто недорогая земля под застройку.";
+                case Biome.Mountain:
+                    return "Здания в горах строить нельзя. Дорога идёт тоннелем и стоит в 1,5 раза дороже, фонарей ночью нет. Горы нужны как проход к дальним секторам.";
+                case Biome.Sea:
+                    return "Здания и мосты на 20% дороже. Зато можно копать каналы и ставить порт (один на сектор, только на воде): корабли приносят доход.";
+                default:
+                    return "Пока в секторе осталось хотя бы 30% деревьев, районы платят на 10% больше. Здания вырубают деревья под собой, так что не застраивай лес целиком.";
+            }
+        }
+
+        static string BiomeName(Biome b)
+        {
+            switch (b)
+            {
+                case Biome.Snow: return "Снег: дёшево строить";
+                case Biome.Desert: return "Пустыня: дёшево строить";
+                case Biome.Mountain: return "Горы: только дороги";
+                case Biome.Sea: return "Море: порты и мосты";
+                default: return "Лес: налоговый бонус";
+            }
+        }
+
+        /// <summary>Какие биомы сейчас есть среди открытых секторов (битовая маска).</summary>
+        int OpenBiomeMask()
+        {
+            int mask = 0;
+            foreach (HexCoord h in _city.Sectors.Open) mask |= 1 << (int)_city.Biomes.Map.BiomeOf(h);
+            return mask;
+        }
+
+        /// <summary>Если есть биом, о котором ещё не рассказывали, показываем урок о нём.</summary>
+        void TryStartLesson()
+        {
+            if (_lesson != null || _city == null || !_city.Started || _city.Biomes == null) return;
+            int unseen = OpenBiomeMask() & ~PlayerPrefs.GetInt(BiomeSeenKey, 0);
+            if (unseen == 0) return;
+            for (int i = 0; i < BiomeSpecs.Count; i++)
+            {
+                if ((unseen & (1 << i)) == 0) continue;
+                var b = (Biome)i;
+                _lessonBiome = b;
+                _lesson = new Step
+                {
+                    Title = BiomeName(b),
+                    Why = BiomeWhy(b),
+                    Do = "Нажми «Понятно».",
+                    HasSwatch = true,
+                    Swatch = BiomeSpecs.Ground(b)
+                };
+                return;
+            }
+        }
+
+        void DismissLesson()
+        {
+            if (_lesson == null) return;
+            PlayerPrefs.SetInt(BiomeSeenKey, PlayerPrefs.GetInt(BiomeSeenKey, 0) | (1 << (int)_lessonBiome));
+            PlayerPrefs.Save();
+            _lesson = null;
+            TryStartLesson(); // следующий непоказанный биом, если есть
         }
 
         int Count(BuildingCategory category)
@@ -161,6 +241,8 @@ namespace CityGame.Buildings
         public void Restart()
         {
             _locked = false; // повтор из меню не блокирует игру
+            PlayerPrefs.SetInt(BiomeSeenKey, 0);
+            _lesson = null;
             BuildSteps();
             PlayerPrefs.SetInt(DoneKey, 0);
             PlayerPrefs.SetInt(StartedKey, 1);
@@ -193,6 +275,7 @@ namespace CityGame.Buildings
             PlayerPrefs.SetInt(StepKey, _step);
             PlayerPrefs.Save();
             EnterStep();
+            TryStartLesson();
         }
 
         void Finish()
@@ -225,7 +308,20 @@ namespace CityGame.Buildings
 
         void Update()
         {
-            if (!_visible || _city == null || !_city.Started) return;
+            if (_city == null || !_city.Started) return;
+            if (!_visible)
+            {
+                // Обучение закончено: следим, не открылся ли новый биом.
+                if (_lesson == null && Time.unscaledTime - _lessonCheck > 0.5f)
+                {
+                    _lessonCheck = Time.unscaledTime;
+                    TryStartLesson();
+                }
+
+                return;
+            }
+
+            if (_lesson != null) return;
             Step st = _steps[_step];
             if (_locked)
             {
@@ -248,6 +344,7 @@ namespace CityGame.Buildings
         public bool BlocksUi(Vector2 guiPixel)
         {
             if (!_locked || !_visible || _steps.Count == 0 || _city == null) return false;
+            if (_lesson != null) return !(_rect.width > 0f && _rect.Contains(guiPixel / Scale));
             if (_rect.width > 0f && _rect.Contains(guiPixel / Scale)) return false;
 
             string anchor, tag;
@@ -267,7 +364,7 @@ namespace CityGame.Buildings
 
         public bool Contains(Vector2 screen)
         {
-            if (!_visible || _rect.width <= 0) return false;
+            if ((!_visible && _lesson == null) || _rect.width <= 0) return false;
             Vector2 gui = new Vector2(screen.x, Screen.height - screen.y) / Scale;
             return _rect.Contains(gui);
         }
@@ -376,6 +473,13 @@ namespace CityGame.Buildings
                 return anchor != null;
             }
 
+            if (_city.ActiveStroke != null && _city.ActiveStroke.Pending)
+            {
+                anchor = "confirm";
+                tag = "Подтверди";
+                return true;
+            }
+
             if (st.Tool == Tool.Expand && _city.Tapper != null && _city.Tapper.HasPending)
             {
                 anchor = "open";
@@ -421,6 +525,7 @@ namespace CityGame.Buildings
             if (anchor != null && anchor.StartsWith("card:")) return "Сейчас: выбери раздел " + CardName(PageOf(st.Tool)) + ".";
             if (anchor == "back") return "Сейчас: нажми НАЗАД и выбери нужный раздел.";
             if (anchor == "open") return "Сейчас: нажми «ОТКРЫТЬ».";
+            if (anchor == "confirm") return "Сейчас: нажми «ПОДТВЕРДИТЬ», и дорога построится.";
             if (anchor != null) return "Сейчас: выбери «" + (st.Tool == Tool.Service ? "любую службу" : TileName(st.Tool)) + "».";
             switch (st.Tool)
             {
@@ -519,13 +624,15 @@ namespace CityGame.Buildings
 
         void OnGUI()
         {
-            if (!_visible || _city == null || !_city.Started || _steps.Count == 0) return;
+            if (_city == null || !_city.Started) return;
+            if (!_visible && _lesson == null) return;
+            if (_visible && _steps.Count == 0 && _lesson == null) return;
             EnsureStyles();
             GUI.depth = -1000;
             float s = Scale;
             GUI.matrix = Matrix4x4.Scale(new Vector3(s, s, 1f));
             float w = Screen.width / s;
-            Step st = _steps[_step];
+            Step st = _lesson ?? _steps[_step];
 
             string anchor, tag;
             bool hasAnchor = ResolveAnchor(st, out anchor, out tag);
@@ -556,10 +663,21 @@ namespace CityGame.Buildings
 
             float textX = _rect.x + 66f;
             float tw = _rect.width - 78f;
-            GUI.Label(new Rect(textX, _rect.y + 9f, tw, 20f), "МЭР  ·  ШАГ " + (_step + 1) + " ИЗ " + _steps.Count,
+            GUI.Label(new Rect(textX, _rect.y + 9f, tw, 20f),
+                st == _lesson ? "МЭР  ·  НОВЫЙ БИОМ" : "МЭР  ·  ШАГ " + (_step + 1) + " ИЗ " + _steps.Count,
                 StyleColor(_small, Amber));
             GUI.Label(new Rect(textX, _rect.y + 27f, tw, 26f), st.Title,
                 StyleColor(_title, new Color32(0xF7, 0xF7, 0xF4, 0xFF)));
+
+            if (st.HasSwatch)
+            {
+                Rect sw = new Rect(_rect.xMax - 38f, _rect.y + 12f, 24f, 24f);
+                GUI.color = new Color32(0xF7, 0xF7, 0xF4, 0xFF);
+                GUI.DrawTexture(new Rect(sw.x - 2f, sw.y - 2f, sw.width + 4f, sw.height + 4f), Texture2D.whiteTexture);
+                GUI.color = st.Swatch;
+                GUI.DrawTexture(sw, Texture2D.whiteTexture);
+                GUI.color = old;
+            }
 
             float y = _rect.y + 60f;
             GUI.Label(new Rect(_rect.x + 14f, y, textW, whyH), st.Why, bodyStyle);
@@ -567,6 +685,12 @@ namespace CityGame.Buildings
             GUI.Label(new Rect(_rect.x + 14f, y, textW, nowH), now, actionStyle);
 
             float by = _rect.yMax - 36f;
+            if (st == _lesson)
+            {
+                DrawButton(new Rect(_rect.xMax - 12f - 110f, by, 110f, 27f), "Понятно", true, DismissLesson);
+                return;
+            }
+
             DrawButton(new Rect(_rect.x + 12f, by, 120f, 27f), "Закрыть обучение", false, Finish);
             bool manual = st.Metric == null;
             string label = manual ? (_step == _steps.Count - 1 ? "Готово" : "Дальше") : "Пропустить шаг";

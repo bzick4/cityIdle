@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CityGame.Buildings;
+using CityGame.CellRoads;
 using CityGame.Roads;
 using CityGame.Sectors;
 using UnityEngine;
@@ -12,7 +13,7 @@ namespace CityGame.Water
     /// Нельзя в горах, на зданиях и портах.
     /// Море копать не нужно, там и так вода, поэтому оно бесплатно.
     /// </summary>
-    public sealed class CanalDrawer : MonoBehaviour
+    public sealed class CanalDrawer : MonoBehaviour, IRoadStroke
     {
         public Camera Cam;
         public float CellSize = 1f;
@@ -40,6 +41,33 @@ namespace CityGame.Water
         bool _previewDirty;
         GameObject _preview;
         Material _previewMaterial;
+        bool _pending;
+
+        public bool Drawing => _drawing;
+        public bool Pending => _pending;
+        public string Title => "Канал";
+        public string Problem => null;
+        public IReadOnlyList<Vector2Int> Path => _path;
+        public float Money => _economy != null ? _economy.Money : 0f;
+        public float StrokeWidth => 0.8f;
+        Camera IRoadStroke.Cam => Cam;
+        public float StrokeCost { get { Evaluate(false, out float t, out _, out _); return t; } }
+        public event Action<IReadOnlyList<Vector2Int>, float> Committed;
+
+        public void Confirm()
+        {
+            if (!_pending) return;
+            _pending = false;
+            Commit();
+        }
+
+        public void Cancel()
+        {
+            _pending = false;
+            _drawing = false;
+            _path.Clear();
+            ClearPreview();
+        }
 
         public void Bind(CanalMap canals, PortMap ports, CityModel city, SectorMap sectors, Biomes biomes, Economy economy)
         {
@@ -59,9 +87,7 @@ namespace CityGame.Water
 
         void OnDisable()
         {
-            _drawing = false;
-            _path.Clear();
-            ClearPreview();
+            Cancel();
         }
 
         void OnDestroy()
@@ -124,6 +150,7 @@ namespace CityGame.Water
                     return;
                 }
 
+                _pending = false;
                 _drawing = true;
                 _axisKnown = false;
                 _path.Clear();
@@ -133,7 +160,7 @@ namespace CityGame.Water
 
             if (!PointerInput.Pressed || PointerInput.Up)
             {
-                Commit();
+                EndStroke();
                 return;
             }
 
@@ -199,15 +226,12 @@ namespace CityGame.Water
             if (Allowed(p)) yield return p;
         }
 
-        void Commit()
+        /// <summary>Считает, какие клетки воды получатся и сколько это стоит.</summary>
+        void Evaluate(bool respectMoney, out float total, out HashSet<Vector2Int> accepted, out bool lackMoney)
         {
-            _drawing = false;
-            ClearPreview();
-            if (_path.Count == 0) return;
-
-            var accepted = new HashSet<Vector2Int>();
-            float total = 0f;
-            bool lackMoney = false;
+            accepted = new HashSet<Vector2Int>();
+            total = 0f;
+            lackMoney = false;
             foreach (Vector2Int p in _path)
             {
                 var fresh = new List<Vector2Int>();
@@ -215,7 +239,7 @@ namespace CityGame.Water
                     if (!accepted.Contains(c) && !_biomes.IsWater(c)) fresh.Add(c);
 
                 float cost = fresh.Count * _economy.CanalCostPerCell;
-                if (_economy.Money < total + cost)
+                if (respectMoney && _economy.Money < total + cost)
                 {
                     lackMoney = true;
                     break;
@@ -224,7 +248,31 @@ namespace CityGame.Water
                 total += cost;
                 foreach (Vector2Int c in fresh) accepted.Add(c);
             }
+        }
 
+        /// <summary>Палец отпущен: строить пока не строим, ждём подтверждения.</summary>
+        void EndStroke()
+        {
+            _drawing = false;
+            if (_path.Count == 0) { Cancel(); return; }
+            Evaluate(false, out float total, out HashSet<Vector2Int> cells, out _);
+            if (cells.Count == 0 || total <= 0f)
+            {
+                Commit(); // сообщит «здесь уже вода»
+                return;
+            }
+
+            _pending = true;
+        }
+
+        void Commit()
+        {
+            _drawing = false;
+            ClearPreview();
+            if (_path.Count == 0) return;
+
+            Evaluate(true, out float total, out HashSet<Vector2Int> accepted, out bool lackMoney);
+            var order = new List<Vector2Int>(_path);
             _path.Clear();
             if (accepted.Count == 0)
             {
@@ -234,6 +282,7 @@ namespace CityGame.Water
 
             if (total > 0f) _economy.TrySpend(total);
             _canals.AddRange(accepted);
+            Committed?.Invoke(order, total);
             if (lackMoney) Message?.Invoke("Не хватило денег, канал построен частично");
         }
 

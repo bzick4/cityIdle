@@ -12,7 +12,7 @@ namespace CityGame.CellRoads
     /// Если увести палец в сторону, дорога поворачивает под 90 градусов, а угол рисуется закруглением.
     /// Если вернуть палец назад по уже нарисованному, лишняя часть исчезает.
     /// </summary>
-    public sealed class CellRoadDrawer : MonoBehaviour
+    public sealed class CellRoadDrawer : MonoBehaviour, IRoadStroke
     {
         public Camera Cam;
         public float CellSize = 1f;
@@ -28,6 +28,45 @@ namespace CityGame.CellRoads
 
         /// <summary>Клетка занята чем-то кроме зданий (например, портом): дорогу не провести.</summary>
         public Func<Vector2Int, bool> IsOccupied;
+
+        /// <summary>Идёт ли сейчас штрих и какие клетки в нём. Для эффектов рисования.</summary>
+        public bool Drawing => _drawing;
+        public bool Pending => _pending;
+        public string Title => "Дорога";
+        public string Problem => null;
+        public IReadOnlyList<Vector2Int> Path => _path;
+        public float Money => _economy != null ? _economy.Money : 0f;
+        public float StrokeCost => PathCost();
+        public float StrokeWidth => WidthFraction;
+        Camera IRoadStroke.Cam => Cam;
+        bool _pending;
+
+        public void Confirm()
+        {
+            if (!_pending) return;
+            _pending = false;
+            Commit();
+        }
+
+        public void Cancel()
+        {
+            _pending = false;
+            _drawing = false;
+            _path.Clear();
+            ClearPreview();
+        }
+
+        /// <summary>Дорога построена: принятые клетки (по порядку) и потраченная сумма.</summary>
+        public event Action<IReadOnlyList<Vector2Int>, float> Committed;
+
+        /// <summary>Сколько стоят новые клетки текущего штриха.</summary>
+        public float PathCost()
+        {
+            float total = 0f;
+            foreach (Vector2Int cell in _path)
+                if (!_map.Has(cell)) total += _economy.RoadCostPerCell * (CostFactorAt != null ? CostFactorAt(cell) : 1f);
+            return total;
+        }
 
         CellRoadMap _map;
         CityModel _city;
@@ -62,9 +101,7 @@ namespace CityGame.CellRoads
 
         void OnDisable()
         {
-            _drawing = false;
-            _path.Clear();
-            ClearPreview();
+            Cancel();
         }
 
         public Vector2Int ToCell(Vector2 world)
@@ -120,7 +157,7 @@ namespace CityGame.CellRoads
 
             if (!PointerInput.Pressed || PointerInput.Up)
             {
-                Commit();
+                EndStroke();
                 return;
             }
 
@@ -193,6 +230,19 @@ namespace CityGame.CellRoads
             }
         }
 
+        /// <summary>Палец отпущен: строить пока не строим, ждём подтверждения.</summary>
+        void EndStroke()
+        {
+            _drawing = false;
+            if (_path.Count == 0 || PathCost() <= 0f)
+            {
+                Cancel();
+                return;
+            }
+
+            _pending = true;
+        }
+
         void Commit()
         {
             _drawing = false;
@@ -217,6 +267,7 @@ namespace CityGame.CellRoads
 
             if (total > 0f) _economy.TrySpend(total);
             _map.AddPath(accepted);
+            Committed?.Invoke(accepted, total);
         }
 
         void RedrawPreview()

@@ -68,6 +68,62 @@ namespace CityGame.CellRoads
 
         public event Action Changed;
 
+        bool _dry;
+        void RaiseChanged()
+        {
+            if (!_dry) Changed?.Invoke();
+        }
+
+        /// <summary>
+        /// Пробная постройка шоссе или односторонней дороги: проверяет, получится ли, и откатывает всё назад.
+        /// События не вызываются, карта не меняется.
+        /// </summary>
+        public bool DryRunPath(IReadOnlyList<Vector2Int> path, bool oneWay)
+        {
+            var masks = new Dictionary<Vector2Int, int>(_masks);
+            var types = new Dictionary<Vector2Int, JunctionType>(_types);
+            var dirs = new Dictionary<Vector2Int, int>(_highwayDirections);
+            var ramps = new HashSet<Vector2Int>(_rampCells);
+            var standalone = new HashSet<Vector2Int>(_standaloneHighwayCells);
+            var owned = new HashSet<Vector2Int>(_ownedHighwayCells);
+            var original = new Dictionary<Vector2Int, int>(_standaloneOriginalMasks);
+            bool flipped = LastJoinFlipped, fork = LastForkBuilt, reversed = LastForkReversed;
+            _dry = true;
+            bool ok;
+            try
+            {
+                ok = oneWay ? SetOneWayPath(path) : SetHighwayPath(path, true);
+            }
+            finally
+            {
+                _dry = false;
+                Replace(_masks, masks);
+                Replace(_types, types);
+                Replace(_highwayDirections, dirs);
+                Replace(_rampCells, ramps);
+                Replace(_standaloneHighwayCells, standalone);
+                Replace(_ownedHighwayCells, owned);
+                Replace(_standaloneOriginalMasks, original);
+                LastJoinFlipped = flipped;
+                LastForkBuilt = fork;
+                LastForkReversed = reversed;
+            }
+
+            return ok;
+        }
+
+        static void Replace<K, V>(Dictionary<K, V> target, Dictionary<K, V> source)
+        {
+            target.Clear();
+            foreach (var kv in source) target.Add(kv.Key, kv.Value);
+        }
+
+        static void Replace<K>(HashSet<K> target, HashSet<K> source)
+        {
+            target.Clear();
+            foreach (K k in source) target.Add(k);
+        }
+
         /// <summary>Меняется только то, что рисуется (выбор или предпросмотр). Расчёт потоков на это не реагирует.</summary>
         public event Action PreviewChanged;
 
@@ -514,7 +570,7 @@ namespace CityGame.CellRoads
                 _highwayDirections[path[i]] = heading;
                 _rampCells.Remove(path[i]);
             }
-            Changed?.Invoke();
+            RaiseChanged();
             return true;
         }
 
@@ -649,7 +705,7 @@ namespace CityGame.CellRoads
                 _rampCells.Add(path[i]);
             }
 
-            Changed?.Invoke();
+            RaiseChanged();
             return true;
         }
 
@@ -850,7 +906,7 @@ namespace CityGame.CellRoads
 
                 LastForkBuilt = true;
                 LastForkReversed = pass == 1 && !armFlowsOut;
-                Changed?.Invoke();
+                RaiseChanged();
                 return true;
             }
             return false;
@@ -911,7 +967,7 @@ namespace CityGame.CellRoads
             }
 
             LastForkBuilt = true;
-            Changed?.Invoke();
+            RaiseChanged();
             return true;
         }
 
@@ -1083,7 +1139,7 @@ namespace CityGame.CellRoads
                     if (_highwayDirections.ContainsKey(kv.Key)) _standaloneOriginalMasks[kv.Key] = kv.Value;
             PairSavedOverpasses();
             LockExistingHighways();
-            Changed?.Invoke();
+            RaiseChanged();
         }
 
         void PairSavedOverpasses()
@@ -1112,7 +1168,7 @@ namespace CityGame.CellRoads
                 if (change.Value == JunctionType.Plain) _types.Remove(change.Key);
                 else _types[change.Key] = change.Value;
             }
-            Changed?.Invoke();
+            RaiseChanged();
         }
 
         /// <summary>Сколько клеток пути ещё не заняты дорогой (за них платим).</summary>
@@ -1152,7 +1208,7 @@ namespace CityGame.CellRoads
                 }
             }
 
-            Changed?.Invoke();
+            RaiseChanged();
         }
 
         public bool Remove(Vector2Int cell)
@@ -1212,7 +1268,7 @@ namespace CityGame.CellRoads
             _standaloneHighwayCells.Remove(cell);
             _ownedHighwayCells.Remove(cell);
             _standaloneOriginalMasks.Remove(cell);
-            Changed?.Invoke();
+            RaiseChanged();
             return true;
         }
 

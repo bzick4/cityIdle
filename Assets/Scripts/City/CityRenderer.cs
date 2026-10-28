@@ -365,6 +365,26 @@ namespace CityGame.Buildings
                     m.Polygon(star, body);
                     break;
                 }
+                case ServiceKind.PowerPlant:
+                {
+                    Color bolt = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
+                    m.Polygon(new List<Vector2>
+                    {
+                        c + new Vector2(s * 0.15f, s * 1.05f), c + new Vector2(-s * 0.6f, -s * 0.1f),
+                        c + new Vector2(-s * 0.05f, -s * 0.1f), c + new Vector2(-s * 0.2f, -s * 1.05f),
+                        c + new Vector2(s * 0.6f, s * 0.15f), c + new Vector2(s * 0.05f, s * 0.15f)
+                    }, bolt);
+                    break;
+                }
+                case ServiceKind.WaterTower:
+                {
+                    Color drop = new Color32(0x4F, 0xA3, 0xE0, 0xFF);
+                    m.Tri(c + new Vector2(-s * 0.55f, -s * 0.05f), c + new Vector2(0f, s * 1.05f),
+                        c + new Vector2(s * 0.55f, -s * 0.05f), drop);
+                    m.Disc(c + new Vector2(0f, -s * 0.3f), s * 0.6f, 16, drop);
+                    m.Disc(c + new Vector2(-s * 0.2f, -s * 0.2f), s * 0.14f, 8, Color.white);
+                    break;
+                }
                 default:
                 {
                     // Пламя: круг внизу и острие вверх.

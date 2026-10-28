@@ -15,7 +15,9 @@ namespace CityGame.Buildings
     {
         Ambulance = 0,
         Police = 1,
-        Fire = 2
+        Fire = 2,
+        PowerPlant = 3,
+        WaterTower = 4
     }
 
     public static class CategorySpecs
@@ -56,10 +58,24 @@ namespace CityGame.Buildings
     /// </summary>
     public static class ServiceSpecs
     {
+        /// <summary>Коммунальные службы: электростанция и водонапорная башня. Дают не налог, а подключение.</summary>
+        public static bool IsUtility(ServiceKind k)
+        {
+            return k == ServiceKind.PowerPlant || k == ServiceKind.WaterTower;
+        }
+
+        /// <summary>Сколько клеток зданий тянет одна станция.</summary>
+        public static int Capacity(ServiceKind k)
+        {
+            return IsUtility(k) ? 30 : 0;
+        }
+
         public static float Radius(ServiceKind k)
         {
             switch (k)
             {
+                case ServiceKind.PowerPlant: return 6f;
+                case ServiceKind.WaterTower: return 6f;
                 case ServiceKind.Ambulance: return 4f;
                 case ServiceKind.Police: return 3f;
                 default: return 3f;
@@ -69,6 +85,7 @@ namespace CityGame.Buildings
         /// <summary>Прибавка к налогу клетки, доля. Профильный тип получает больше.</summary>
         public static float Bonus(ServiceKind k, BuildingCategory target)
         {
+            if (IsUtility(k)) return 0f;
             switch (k)
             {
                 case ServiceKind.Ambulance:
@@ -86,6 +103,8 @@ namespace CityGame.Buildings
             {
                 case ServiceKind.Ambulance: return new Color32(0xE9, 0xEE, 0xF2, 0xFF);
                 case ServiceKind.Police: return new Color32(0x3D, 0x5A, 0xA8, 0xFF);
+                case ServiceKind.PowerPlant: return new Color32(0xF2, 0xC1, 0x4E, 0xFF);
+                case ServiceKind.WaterTower: return new Color32(0x4F, 0xA3, 0xE0, 0xFF);
                 default: return new Color32(0xD9, 0x4F, 0x45, 0xFF);
             }
         }
@@ -96,6 +115,8 @@ namespace CityGame.Buildings
             {
                 case ServiceKind.Ambulance: return "Скорая";
                 case ServiceKind.Police: return "Полиция";
+                case ServiceKind.PowerPlant: return "Электро-станция";
+                case ServiceKind.WaterTower: return "Водо-башня";
                 default: return "Пожарные";
             }
         }

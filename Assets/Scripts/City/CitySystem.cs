@@ -58,6 +58,7 @@ namespace CityGame.Buildings
         public JunctionTapper JunctionTool { get; private set; }
         public Biomes Biomes { get; private set; }
         public ServiceCoverage Coverage { get; private set; }
+        public UtilityNet Utilities { get; private set; }
         public ServiceOverlay ServiceZones { get; private set; }
         public CarSystem Traffic { get; private set; }
         public CanalMap Canals { get; private set; }
@@ -66,6 +67,22 @@ namespace CityGame.Buildings
         public BusStationPlacer BusTool { get; private set; }
         public BusSystem Buses { get; private set; }
         public CanalDrawer CanalTool { get; private set; }
+
+        /// <summary>Штрих выбранного инструмента (дорога, шоссе, односторонняя, канал) или null.</summary>
+        public IRoadStroke ActiveStroke
+        {
+            get
+            {
+                switch (CurrentTool)
+                {
+                    case Tool.Road: return RoadDrawer;
+                    case Tool.Highway:
+                    case Tool.OneWay: return HighwayTool;
+                    case Tool.Canal: return CanalTool;
+                    default: return null;
+                }
+            }
+        }
         public PortPlacer PortTool { get; private set; }
         public ShipSystem Ships { get; private set; }
         public DayNight Day { get; private set; }
@@ -315,6 +332,11 @@ namespace CityGame.Buildings
             Coverage = new ServiceCoverage(Model);
             Economy = GetOrAdd<Economy>();
             Economy.Bind(Model, Coverage, Biomes);
+            Utilities = new UtilityNet(Model);
+            Economy.UtilityFactor = Utilities.ServedFraction;
+            var markers = GetOrAdd<UtilityMarkers>();
+            markers.CellSize = CellSize;
+            markers.Bind(Model, Utilities);
 
             ServiceZones = GetOrAdd<ServiceOverlay>();
             ServiceZones.CellSize = CellSize;
@@ -374,6 +396,7 @@ namespace CityGame.Buildings
             HighwayTool.Bind(RoadMap, Model, Sectors, Economy);
             HighwayTool.CostFactorAt = Biomes.RoadCostFactor;
             HighwayTool.IsOccupied = c => Ports.Has(c) || BusStations.Has(c);
+            GetOrAdd<RoadDrawFx>().Bind(CellSize, RoadDrawer, HighwayTool, CanalTool);
             var tunnels = GetOrAdd<TunnelRenderer>();
             tunnels.CellSize = CellSize;
             tunnels.Bind(RoadMap, Biomes);

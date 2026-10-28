@@ -23,6 +23,9 @@ namespace CityGame.Buildings
         [Tooltip("Цена службы по виду: скорая, полиция, пожарные")]
         public float[] ServiceCost = { 300f, 300f, 300f };
 
+        [Tooltip("Цена коммунальных станций: электростанция, водонапорная башня")]
+        public float[] UtilityCost = { 350f, 250f };
+
         [Tooltip("Цена одной клетки дороги")]
         public float RoadCostPerCell = 5f;
         [Tooltip("Цена одной клетки самостоятельного шоссе")]
@@ -39,6 +42,9 @@ namespace CityGame.Buildings
         public float PortCost = 400f;
         [Tooltip("Цена автостанции")]
         public float BusStationCost = 250f;
+
+        /// <summary>Доля клеток района с электричеством и водой, 0..1. Без сети всё считается подключённым.</summary>
+        public Func<District, float> UtilityFactor;
 
         /// <summary>Доход, который не считается по районам (порты и корабли), в секунду.</summary>
         public Func<float> ExtraIncome;
@@ -99,7 +105,15 @@ namespace CityGame.Buildings
 
         public float CostOf(BuildingCategory c, ServiceKind kind = ServiceKind.Ambulance)
         {
-            return c == BuildingCategory.Service ? ServiceCost[(int)kind] : BuildCost[(int)c];
+            if (c != BuildingCategory.Service) return BuildCost[(int)c];
+            int k = (int)kind;
+            if (ServiceSpecs.IsUtility(kind))
+            {
+                int u = k - (int)ServiceKind.PowerPlant;
+                return u < UtilityCost.Length ? UtilityCost[u] : 300f;
+            }
+
+            return k < ServiceCost.Length ? ServiceCost[k] : 300f;
         }
 
         public bool CanAfford(BuildingCategory c, ServiceKind kind = ServiceKind.Ambulance)
@@ -133,7 +147,8 @@ namespace CityGame.Buildings
         public float DistrictIncomePerSecond(District d)
         {
             float bonus = BonusOf(d);
-            return IncomePerCell[(int)d.Category] * d.Multiplier * SatisfactionFactor(d) * (1f + bonus);
+            float served = UtilityFactor != null ? UtilityFactor(d) : 1f;
+            return IncomePerCell[(int)d.Category] * d.Multiplier * SatisfactionFactor(d) * (1f + bonus) * served;
         }
 
         void Update()

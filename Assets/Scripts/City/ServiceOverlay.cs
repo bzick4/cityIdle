@@ -61,7 +61,7 @@ namespace CityGame.Buildings
                 foreach (var kv in _coverage.Mask)
                 {
                     Vector2 c = new Vector2((kv.Key.x + 0.5f) * cs, (kv.Key.y + 0.5f) * cs);
-                    for (int k = 0; k < 3; k++)
+                    for (int k = 0; k < System.Enum.GetValues(typeof(ServiceKind)).Length; k++)
                     {
                         if ((kv.Value & (1 << k)) == 0) continue;
                         Color col = ServiceSpecs.Color((ServiceKind)k);

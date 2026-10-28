@@ -27,7 +27,7 @@ namespace CityGame.Buildings
         public Color PanelColor = new Color32(0xE4, 0xE4, 0xE4, 0xF2);
 
         enum Popup { None, Tools, Info }
-        enum ToolPage { Home, Districts, Roads, Services }
+        enum ToolPage { Home, Districts, Roads, Services, Utilities }
 
         CitySystem _city;
         Popup _popup = Popup.None;
@@ -158,6 +158,7 @@ namespace CityGame.Buildings
             return _barRect.Contains(gui) || _popupRect.Contains(gui) ||
                    (_city != null && _city.Tutorial != null && _city.Tutorial.Contains(screen)) ||
                    (_city != null && _city.Tapper != null && _city.Tapper.HasPending && _dialogRect.Contains(gui)) ||
+                   _strokeRect.Contains(gui) ||
                    (_popup != Popup.Tools && _city != null && _city.JunctionTool != null && _city.JunctionTool.HasSelection &&
                     _junctionRect.Contains(gui)) ||
                    (_popup != Popup.Tools && _city != null && (_city.CurrentTool == Tool.Highway || _city.CurrentTool == Tool.OneWay) &&
@@ -185,7 +186,7 @@ namespace CityGame.Buildings
                 case Tool.Residential: return name + "\n" + _city.Economy.BuildCost[(int)BuildingCategory.Residential];
                 case Tool.Commercial: return name + "\n" + _city.Economy.BuildCost[(int)BuildingCategory.Commercial];
                 case Tool.Industrial: return name + "\n" + _city.Economy.BuildCost[(int)BuildingCategory.Industrial];
-                case Tool.Service: return name + "\n" + _city.Economy.ServiceCost[(int)_city.CurrentService];
+                case Tool.Service: return name + "\n" + _city.Economy.CostOf(BuildingCategory.Service, _city.CurrentService);
                 default: return name;
             }
         }
@@ -386,6 +387,14 @@ namespace CityGame.Buildings
             }
             else _dialogRect = Rect.zero;
 
+            IRoadStroke stroke = _city.ActiveStroke;
+            if (stroke != null && stroke.Pending && _popup != Popup.Tools)
+            {
+                DrawStrokeDialog(stroke, w, top);
+                top = _strokeRect.y - 6f;
+            }
+            else _strokeRect = Rect.zero;
+
             if (_city.Placer.PendingEraseCell.HasValue)
                 DrawEraseDialog(w, h);
             else _eraseRect = Rect.zero;
@@ -398,6 +407,40 @@ namespace CityGame.Buildings
                 GUI.Label(r, _toast, _lblCenter);
             }
 
+        }
+
+        Rect _strokeRect;
+
+        /// <summary>Окно после отпускания пальца: цена пути и две кнопки.</summary>
+        void DrawStrokeDialog(IRoadStroke stroke, float w, float top)
+        {
+            float extra = stroke.Problem != null ? 56f : 0f;
+            float panelH = 112f + extra;
+            _strokeRect = new Rect(8f, top - panelH, w - 16f, panelH);
+            Draw(_strokeRect, _panel, PanelColor);
+
+            float cost = stroke.StrokeCost;
+            string problem = stroke.Problem;
+            bool affordable = cost <= stroke.Money + 0.001f && problem == null;
+            GUI.Label(new Rect(_strokeRect.x + 14f, _strokeRect.y + 8f, _strokeRect.width - 28f, 26f),
+                "ПОСТРОИТЬ: " + stroke.Title.ToUpper(), _lblMenuTitle);
+            GUI.Label(new Rect(_strokeRect.x + 14f, _strokeRect.y + 34f, _strokeRect.width - 28f, 22f),
+                "Длина " + stroke.Path.Count + " кл. · Стоимость " + Mathf.RoundToInt(cost) +
+                (problem != null ? "" : cost <= stroke.Money + 0.001f ? "" : " · не хватает денег"), _lblSmall);
+            if (problem != null)
+                GUI.Label(new Rect(_strokeRect.x + 14f, _strokeRect.y + 52f, _strokeRect.width - 28f, 56f), problem, _lblSmall);
+
+            const float gap = 8f;
+            float bw = (_strokeRect.width - 28f - gap) * 0.6f;
+            var ok = new Rect(_strokeRect.x + 14f, _strokeRect.y + 60f + extra, bw, 40f);
+            Anchors["confirm"] = ok;
+            var cancel = new Rect(ok.xMax + gap, ok.y, _strokeRect.width - 28f - gap - bw, 40f);
+            if (DrawActionButton(ok, "ПОДТВЕРДИТЬ", affordable ? ShopColor : new Color32(0xD8, 0xDB, 0xDE, 0xFF),
+                    new Color32(0x2C, 0x3A, 0x40, 0xFF), affordable))
+                stroke.Confirm();
+            if (DrawActionButton(cancel, "ОТМЕНА", new Color32(0xF7, 0xF7, 0xF7, 0xFF),
+                    new Color32(0x3B, 0x46, 0x52, 0xFF), true))
+                stroke.Cancel();
         }
 
         void DrawEraseDialog(float w, float h)
@@ -495,7 +538,7 @@ namespace CityGame.Buildings
             _junctionRect = _highwayRect = Rect.zero;
             bool home = _toolPage == ToolPage.Home;
             float panelHeight = home ? 142f :
-                _toolPage == ToolPage.Services ? 148f : 218f;
+                _toolPage == ToolPage.Services || _toolPage == ToolPage.Utilities ? 148f : 218f;
             Rect panel = new Rect(8f, Mathf.Max(8f, top - panelHeight), w - 16f, panelHeight);
             _popupRect = panel;
             Draw(panel, _panel, PanelColor);
@@ -511,13 +554,14 @@ namespace CityGame.Buildings
 
             string title = home ? "СТРОИТЕЛЬСТВО" :
                 _toolPage == ToolPage.Districts ? "РАЙОНЫ" :
-                _toolPage == ToolPage.Roads ? "ДОРОГИ" : "СЛУЖБЫ";
+                _toolPage == ToolPage.Roads ? "ДОРОГИ" :
+                _toolPage == ToolPage.Utilities ? "ЭНЕРГИЯ И ВОДА" : "СЛУЖБЫ";
             GUI.Label(new Rect(panel.x + 98f, panel.y + 8f, panel.width - 108f, 30f), title, _lblMenuTitle);
 
             if (home)
             {
                 float gap = 6f;
-                float cardW = (panel.width - 24f - gap * 3f) / 4f;
+                float cardW = (panel.width - 24f - gap * 4f) / 5f;
                 float cardH = 84f;
                 float x = panel.x + 8f;
                 float y = panel.y + 44f;
@@ -527,14 +571,16 @@ namespace CityGame.Buildings
                     ToolPage.Roads, new Color32(0xE6, 0xE9, 0xEC, 0xFF));
                 DrawCategoryCard(new Rect(x + (cardW + gap) * 2f, y, cardW, cardH), "СЛУЖБЫ", _icons[(int)Tool.Service - 1],
                     ToolPage.Services, new Color32(0xF8, 0xE9, 0xE8, 0xFF));
+                DrawCategoryCard(new Rect(x + (cardW + gap) * 3f, y, cardW, cardH), "ЭНЕРГИЯ", _serviceIcons[(int)ServiceKind.PowerPlant],
+                    ToolPage.Utilities, new Color32(0xFB, 0xF2, 0xD8, 0xFF));
                 // «Снести» не категория, а режим: нажатие сразу включает инструмент.
-                DrawEraseCard(new Rect(x + (cardW + gap) * 3f, y, cardW, cardH));
+                DrawEraseCard(new Rect(x + (cardW + gap) * 4f, y, cardW, cardH));
                 return panel.y - 6f;
             }
 
-            if (_toolPage == ToolPage.Services)
+            if (_toolPage == ToolPage.Services || _toolPage == ToolPage.Utilities)
             {
-                DrawServicePage(panel);
+                DrawServicePage(panel, _toolPage == ToolPage.Utilities);
                 return panel.y - 6f;
             }
 
@@ -597,17 +643,20 @@ namespace CityGame.Buildings
             }
         }
 
-        void DrawServicePage(Rect panel)
+        void DrawServicePage(Rect panel, bool utilities)
         {
             const float gap = 6f;
-            float cardW = (panel.width - 24f - gap * 2f) / 3f;
+            int first = utilities ? (int)ServiceKind.PowerPlant : 0;
+            int count = utilities ? 2 : 3;
+            float cardW = (panel.width - 24f - gap * (count - 1)) / count;
             const float cardH = 88f;
             float x0 = panel.x + 8f;
             float y = panel.y + 44f;
-            for (int i = 0; i < _serviceIcons.Length; i++)
+            for (int n = 0; n < count; n++)
             {
+                int i = first + n;
                 ServiceKind kind = (ServiceKind)i;
-                Rect r = new Rect(x0 + i * (cardW + gap), y, cardW, cardH);
+                Rect r = new Rect(x0 + n * (cardW + gap), y, cardW, cardH);
                 Anchors["service:" + i] = r;
                 Draw(r, _panel, _city.CurrentTool == Tool.Service && _city.CurrentService == kind
                     ? ShopColor : new Color32(0xF7, 0xF7, 0xF4, 0xFF));
@@ -616,7 +665,7 @@ namespace CityGame.Buildings
                     _serviceIcons[i], ScaleMode.ScaleToFit, true);
                 GUI.Label(new Rect(r.x + 3f, r.y + 42f, r.width - 6f, 20f), ServiceSpecs.Title(kind), _lblTile);
                 GUI.Label(new Rect(r.x + 3f, r.y + 63f, r.width - 6f, 18f),
-                    _city.Economy.ServiceCost[i].ToString(), _lblTile);
+                    _city.Economy.CostOf(BuildingCategory.Service, kind).ToString(), _lblTile);
                 if (!GUI.Button(r, GUIContent.none, GUIStyle.none)) continue;
                 _city.SelectService(kind);
                 _city.Select(Tool.Service);
@@ -637,7 +686,7 @@ namespace CityGame.Buildings
         {
             var districts = _city.Model.Districts;
             int rows = Mathf.Min(districts.Count, 6);
-            int extra = _city.Flow.UnconnectedDistricts > 0 ? 1 : 0;
+            int extra = (_city.Flow.UnconnectedDistricts > 0 ? 1 : 0) + 1;
             float diagH = ShowDiagnostics ? 34f : 0f;
             float panelH = 10f + 38f + (rows + extra) * 20f + (rows + extra > 0 ? 6f : 0f) + diagH + 8f;
             _popupRect = new Rect(8f, top - panelH, w - 16f, panelH);
@@ -690,7 +739,12 @@ namespace CityGame.Buildings
                 y += 20f;
             }
 
-            if (extra > 0)
+            UtilityNet net = _city.Utilities;
+            GUI.Label(new Rect(x, y, _popupRect.width - 20f, 20f),
+                string.Format("Энергия {0}/{1} · Вода {2}/{3}", net.PowerUsed, net.PowerCapacity, net.WaterUsed, net.WaterCapacity), _lbl);
+            y += 20f;
+
+            if (_city.Flow.UnconnectedDistricts > 0)
             {
                 GUI.Label(new Rect(x, y, _popupRect.width - 20f, 20f), "Без дороги: " + _city.Flow.UnconnectedDistricts, _lbl);
                 y += 20f;
