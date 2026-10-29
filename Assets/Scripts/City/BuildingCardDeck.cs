@@ -18,6 +18,7 @@ namespace CityGame.City
         public float CellSize = 1f;
 
         BuildingPlacer _placer;
+        CityDebugHud _hud;
         Canvas _canvas;
         RectTransform _deckRoot;
 
@@ -38,7 +39,7 @@ namespace CityGame.City
         const float CardW = 120f;
         const float CardH = 170f;
         const float CardSpacing = 86f;   // горизонтальный шаг между картами
-        const float DeckY = 100f;        // высота нижней грани колоды над низом экрана
+        const float DeckY = 8f;          // зазор между низом deckRoot и картами
         const float LiftY = 28f;         // подъём при наведении
         const float DragThreshold = 60f; // сколько пикселей вверх до перехода в режим drag-to-map
 
@@ -98,9 +99,10 @@ namespace CityGame.City
 
         // -------- публичный API --------
 
-        public void Bind(BuildingPlacer placer, Economy economy)
+        public void Bind(BuildingPlacer placer, Economy economy, CityDebugHud hud = null)
         {
             _placer = placer;
+            _hud = hud;
             _cam = Camera.main;
             BuildUI(economy);
             BuildGhost();
@@ -288,11 +290,28 @@ namespace CityGame.City
         {
             if (_canvas == null || !_canvas.gameObject.activeSelf) return;
 
+            // Поднимаем колоду выше IMGUI-панели
+            UpdateDeckPosition();
+
             // Лёгкий эффект: карты реагируют на близость пальца без захвата
             HandleHoverLift();
 
             // Основная логика захвата и перетаскивания
             HandleTouch();
+        }
+
+        void UpdateDeckPosition()
+        {
+            if (_deckRoot == null || _canvas == null) return;
+
+            // Пикселей от низа экрана до верха IMGUI-панели
+            float bottomPx = _hud != null ? _hud.BottomPanelTopPx : 0f;
+
+            // Переводим в единицы Canvas (CanvasScaler масштабирует пиксели → canvas-units)
+            float canvasScale = _canvas.scaleFactor > 0f ? _canvas.scaleFactor : 1f;
+            float bottomCanvas = bottomPx / canvasScale + 12f; // 12 — зазор
+
+            _deckRoot.anchoredPosition = new Vector2(0f, bottomCanvas);
         }
 
         void HandleHoverLift()

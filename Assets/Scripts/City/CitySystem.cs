@@ -494,7 +494,7 @@ namespace CityGame.Buildings
 
             CardDeck = GetOrAdd<BuildingCardDeck>();
             CardDeck.CellSize = CellSize;
-            CardDeck.Bind(Placer, Economy);
+            CardDeck.Bind(Placer, Economy, _hud);
             CardDeck.SetVisible(false);
 
             Started = true;

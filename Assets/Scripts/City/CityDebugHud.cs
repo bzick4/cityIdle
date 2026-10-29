@@ -63,6 +63,23 @@ namespace CityGame.Buildings
 
         public float GuiScale => Scale;
         public bool ToolsOpen => _popup == Popup.Tools;
+
+        /// <summary>
+        /// Высота нижней панели (бар + попап, если открыт) в экранных пикселях.
+        /// BuildingCardDeck использует это, чтобы расположить колоду выше.
+        /// </summary>
+        public float BottomPanelTopPx
+        {
+            get
+            {
+                float s = Scale;
+                // IMGUI y идёт от верха экрана; h - rect.y = расстояние от низа в IMGUI-единицах.
+                Rect r = (_popupRect != Rect.zero) ? _popupRect : _barRect;
+                if (r == Rect.zero) return (60f + 16f) * s;
+                float hImgui = Screen.height / s;
+                return (hImgui - r.y) * s;
+            }
+        }
         /// <summary>Home, Districts, Roads или Services.</summary>
         public string ToolsPage => _toolPage.ToString();
 
