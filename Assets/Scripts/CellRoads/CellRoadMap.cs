@@ -76,6 +76,8 @@ namespace CityGame.CellRoads
         public Vector2 From;
         public Vector2 To;
         public HashSet<Vector2Int> Interior;
+        /// <summary>Половина ширины в долях клетки. 0 = обычная дорога (widthFraction*0.5). >0 = шоссе/одностороннее.</summary>
+        public float HalfWidthFraction;
     }
 
     /// <summary>
@@ -1213,12 +1215,12 @@ namespace CityGame.CellRoads
         }
 
         /// <summary>Запоминает прямолинейный штрих для последующего рендеринга единым квадом.</summary>
-        public void AddStroke(Vector2 from, Vector2 to, IList<Vector2Int> cells)
+        public void AddStroke(Vector2 from, Vector2 to, IList<Vector2Int> cells, float halfWidthFraction = 0f)
         {
             if (cells == null || cells.Count < 2) return;
             var interior = new HashSet<Vector2Int>();
             for (int i = 1; i < cells.Count - 1; i++) interior.Add(cells[i]);
-            _strokes.Add(new RoadStroke { From = from, To = to, Interior = interior });
+            _strokes.Add(new RoadStroke { From = from, To = to, Interior = interior, HalfWidthFraction = halfWidthFraction });
         }
 
         /// <summary>Алгоритм Брезенхема: возвращает клетки от from до to включительно.</summary>

@@ -146,7 +146,7 @@ namespace CityGame.CellRoads
 
             AppendDiagonalStrips(layers, allMasks, cellSize, widthFraction, typeOf, laneOf);
             AppendStrokes(layers, strokes, allMasks, cellSize, widthFraction);
-            if (laneOf != null) AppendStandaloneHighways(layers, entries, laneOf, cellSize);
+            if (laneOf != null) AppendStandaloneHighways(layers, entries, laneOf, cellSize, strokes);
 
             return layers;
         }
@@ -256,6 +256,8 @@ namespace CityGame.CellRoads
 
             foreach (RoadStroke stroke in strokes)
             {
+                // Штрихи шоссе/одностороннего рендерятся через AppendStandaloneHighways с правильной шириной.
+                if (stroke.HalfWidthFraction > 0f) continue;
                 float dx = stroke.To.x - stroke.From.x;
                 float dy = stroke.To.y - stroke.From.y;
                 float adx = Mathf.Abs(dx), ady = Mathf.Abs(dy);
@@ -307,7 +309,8 @@ namespace CityGame.CellRoads
 
         static void AppendStandaloneHighways(RoadLayers layers,
             IEnumerable<KeyValuePair<Vector2Int, int>> cells,
-            Func<Vector2Int, HighwayLane> laneOf, float cellSize)
+            Func<Vector2Int, HighwayLane> laneOf, float cellSize,
+            IReadOnlyList<RoadStroke> strokes = null)
         {
             var all = new List<Vector2Int>();
             var masks = new Dictionary<Vector2Int, int>();
@@ -318,11 +321,21 @@ namespace CityGame.CellRoads
                 if (lane.Active && lane.Standalone) all.Add(item.Key);
             }
 
+            // Строим набор внутренних клеток диагональных штрихов шоссе/односторонних.
+            var highwayStrokeInterior = new HashSet<Vector2Int>();
+            if (strokes != null)
+                foreach (RoadStroke s in strokes)
+                    if (s.HalfWidthFraction > 0f && s.Interior != null)
+                        foreach (Vector2Int c in s.Interior)
+                            highwayStrokeInterior.Add(c);
+
             var visited = new HashSet<Vector2Int>();
             foreach (Vector2Int cell in all)
             {
                 if (visited.Contains(cell) || HasStandalonePredecessor(cell, laneOf, masks)) continue;
-                AppendStandaloneRoute(layers, TraceStandaloneRoute(cell, laneOf, masks, visited), laneOf, masks, cellSize);
+                List<Vector2Int> route = TraceStandaloneRoute(cell, laneOf, masks, visited);
+                route = CollapseIfStroke(route, highwayStrokeInterior);
+                AppendStandaloneRoute(layers, route, laneOf, masks, cellSize);
             }
             // Обрабатываем замкнутые контуры, у которых нет начала.
             foreach (Vector2Int cell in all)
@@ -332,6 +345,18 @@ namespace CityGame.CellRoads
                 CloseLoop(loop, laneOf, masks);
                 AppendStandaloneRoute(layers, loop, laneOf, masks, cellSize);
             }
+        }
+
+        /// <summary>
+        /// Если все промежуточные клетки маршрута покрыты штрихом шоссе, сворачиваем в два конца —
+        /// тогда AppendStandaloneRoute нарисует прямую ленту вместо зигзага по центрам клеток.
+        /// </summary>
+        static List<Vector2Int> CollapseIfStroke(List<Vector2Int> route, HashSet<Vector2Int> highwayStrokeInterior)
+        {
+            if (route == null || route.Count <= 2 || highwayStrokeInterior.Count == 0) return route;
+            for (int i = 1; i < route.Count - 1; i++)
+                if (!highwayStrokeInterior.Contains(route[i])) return route;
+            return new List<Vector2Int> { route[0], route[route.Count - 1] };
         }
 
         /// <summary>
