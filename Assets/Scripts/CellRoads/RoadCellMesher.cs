@@ -673,8 +673,8 @@ namespace CityGame.CellRoads
             {
                 HighwayLane inLane  = laneOf(key - Side.Vec(lane.Heading));
                 HighwayLane outLane = laneOf(key + Side.Vec(lane.Heading));
-                if (inLane.Active  && !inLane.OneWay)  hw0 = highwayHw;
-                if (outLane.Active && !outLane.OneWay) hw1 = highwayHw;
+                if (inLane.Active  && inLane.Manual  && !inLane.OneWay)  hw0 = highwayHw;
+                if (outLane.Active && outLane.Manual && !outLane.OneWay) hw1 = highwayHw;
             }
 
             Vector2 back  = c - along * h;
