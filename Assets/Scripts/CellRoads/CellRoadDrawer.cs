@@ -167,7 +167,7 @@ namespace CityGame.CellRoads
             return new Vector2(p.x, p.y);
         }
 
-        /// <summary>Пересчитывает путь от стартовой клетки до цели по алгоритму Брезенхема (любой угол).</summary>
+        /// <summary>Строит путь от стартовой клетки до цели по доминирующей оси (горизонталь или вертикаль).</summary>
         void Follow(Vector2Int target)
         {
             if (_path.Count == 0) return;
@@ -177,14 +177,26 @@ namespace CityGame.CellRoads
                 if (_path.Count > 1) { _path.RemoveRange(1, _path.Count - 1); _previewDirty = true; }
                 return;
             }
-            var line = new List<Vector2Int>();
-            CellRoadMap.BresenhamLine(start, target, line);
-            for (int i = 1; i < line.Count; i++)
+            var line = new List<Vector2Int> { start };
+            Vector2Int delta = target - start;
+            if (Mathf.Abs(delta.x) >= Mathf.Abs(delta.y))
             {
-                if (!Allowed(line[i]))
+                int sx = delta.x > 0 ? 1 : -1;
+                for (int x = start.x + sx; x != target.x + sx; x += sx)
                 {
-                    line.RemoveRange(i, line.Count - i);
-                    break;
+                    var cell = new Vector2Int(x, start.y);
+                    if (!Allowed(cell)) break;
+                    line.Add(cell);
+                }
+            }
+            else
+            {
+                int sy = delta.y > 0 ? 1 : -1;
+                for (int y = start.y + sy; y != target.y + sy; y += sy)
+                {
+                    var cell = new Vector2Int(start.x, y);
+                    if (!Allowed(cell)) break;
+                    line.Add(cell);
                 }
             }
             _path.Clear();
@@ -229,13 +241,6 @@ namespace CityGame.CellRoads
 
             if (total > 0f) _economy.TrySpend(total);
             _map.AddPath(accepted);
-            // Для диагональных штрихов сохраняем прямую линию: рендерер пропустит зигзаг.
-            if (accepted.Count >= 2)
-            {
-                Vector2Int a0 = accepted[0], a1 = accepted[accepted.Count - 1];
-                if (a0.x != a1.x && a0.y != a1.y)
-                    _map.AddStroke(CellCenter(a0), CellCenter(a1), accepted);
-            }
             Committed?.Invoke(accepted, total);
         }
 
@@ -245,21 +250,8 @@ namespace CityGame.CellRoads
             ClearPreview();
             if (_path.Count == 0) return;
 
-            Mesh mesh;
-            // Любая диагональ (не горизонталь/вертикаль): один прямой квад от первой до последней клетки.
-            bool isDiag = _path.Count >= 2 &&
-                          _path[_path.Count - 1].x != _path[0].x &&
-                          _path[_path.Count - 1].y != _path[0].y;
-            if (isDiag)
-            {
-                mesh = BuildStripMesh(CellCenter(_path[0]), CellCenter(_path[_path.Count - 1]),
-                                      WidthFraction * CellSize * 0.5f);
-            }
-            else
-            {
-                Dictionary<Vector2Int, int> masks = CellRoadMap.MasksOf(_path);
-                mesh = RoadCellMesher.Build(masks, null, null, CellSize, WidthFraction).ToMesh(RoadLayers.Road);
-            }
+            Dictionary<Vector2Int, int> masks = CellRoadMap.MasksOf(_path);
+            Mesh mesh = RoadCellMesher.Build(masks, null, null, CellSize, WidthFraction).ToMesh(RoadLayers.Road);
 
             _preview = new GameObject("RoadPreview");
             _preview.transform.SetParent(transform, false);

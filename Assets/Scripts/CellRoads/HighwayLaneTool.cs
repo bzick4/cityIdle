@@ -226,7 +226,23 @@ namespace CityGame.CellRoads
 
             Vector2Int endCell = ToCell(screen);
             var line = new List<Vector2Int>();
-            CellRoadMap.BresenhamLine(_startCell, endCell, line);
+            Vector2Int hDelta = endCell - _startCell;
+            if (hDelta == Vector2Int.zero)
+            {
+                line.Add(_startCell);
+            }
+            else if (Mathf.Abs(hDelta.x) >= Mathf.Abs(hDelta.y))
+            {
+                int sx = hDelta.x > 0 ? 1 : -1;
+                for (int x = _startCell.x; x != endCell.x + sx; x += sx)
+                    line.Add(new Vector2Int(x, _startCell.y));
+            }
+            else
+            {
+                int sy = hDelta.y > 0 ? 1 : -1;
+                for (int y = _startCell.y; y != endCell.y + sy; y += sy)
+                    line.Add(new Vector2Int(_startCell.x, y));
+            }
 
             _path.Clear();
             _path.Add(_startCell);
@@ -457,22 +473,7 @@ namespace CityGame.CellRoads
                 ? _map.SetOneWayPath(accepted)
                 : _map.SetHighwayPath(accepted, true));
             if (ok && total > 0f && _economy != null) _economy.TrySpend(total);
-            if (ok)
-            {
-                Committed?.Invoke(accepted, total);
-                // Для диагональных штрихов сохраняем прямую линию с шириной шоссе/одностороннего.
-                if (accepted.Count >= 2)
-                {
-                    Vector2Int a0 = accepted[0], a1 = accepted[accepted.Count - 1];
-                    if (a0.x != a1.x && a0.y != a1.y)
-                    {
-                        float hwFrac = OneWayMode ? 0.25f : 0.44f;
-                        Vector2 from = new Vector2((a0.x + 0.5f) * CellSize, (a0.y + 0.5f) * CellSize);
-                        Vector2 to   = new Vector2((a1.x + 0.5f) * CellSize, (a1.y + 0.5f) * CellSize);
-                        _map.AddStroke(from, to, accepted, hwFrac);
-                    }
-                }
-            }
+            if (ok) Committed?.Invoke(accepted, total);
             bool ringBuilt = ok && CellRoadMap.IsClosedPath(accepted);
             Message?.Invoke(!ok ? FailMessage(accepted) :
                 _map.LastForkBuilt ? (_map.LastForkReversed
@@ -506,24 +507,10 @@ namespace CityGame.CellRoads
             }
             else
             {
-                // Диагональный маршрут в режиме ожидания — тоже прямая линия, не зигзаг.
-                Vector2Int pFirst = _path[0], pLast = _path[_path.Count - 1];
-                bool pendingDiag = pFirst.x != pLast.x && pFirst.y != pLast.y;
-                if (pendingDiag)
-                {
-                    Vector2 sW = new Vector2((pFirst.x + 0.5f) * CellSize, (pFirst.y + 0.5f) * CellSize);
-                    Vector2 eW = new Vector2((pLast.x  + 0.5f) * CellSize, (pLast.y  + 0.5f) * CellSize);
-                    _preview.positionCount = 2;
-                    _preview.SetPosition(0, new Vector3(sW.x, sW.y, -0.02f));
-                    _preview.SetPosition(1, new Vector3(eW.x, eW.y, -0.02f));
-                }
-                else
-                {
-                    var smoothed = BuildSmoothedPreview(_path);
-                    _preview.positionCount = smoothed.Count;
-                    for (int i = 0; i < smoothed.Count; i++)
-                        _preview.SetPosition(i, new Vector3(smoothed[i].x, smoothed[i].y, -0.02f));
-                }
+                var smoothed = BuildSmoothedPreview(_path);
+                _preview.positionCount = smoothed.Count;
+                for (int i = 0; i < smoothed.Count; i++)
+                    _preview.SetPosition(i, new Vector3(smoothed[i].x, smoothed[i].y, -0.02f));
             }
             _preview.enabled = true;
         }
