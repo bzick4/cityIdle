@@ -15,10 +15,7 @@ namespace CityGame.City
         //  События
         // ──────────────────────────────────────────────────────────
 
-        /// <summary>Инструмент выбран тапом по карточке.</summary>
         public event System.Action<Tool> ToolRequested;
-
-        /// <summary>Последний выбранный тип службы (читает CitySystem перед ToolRequested(Tool.Service)).</summary>
         public ServiceKind LastSelectedService { get; private set; } = ServiceKind.Ambulance;
 
         // ──────────────────────────────────────────────────────────
@@ -42,6 +39,22 @@ namespace CityGame.City
         }
 
         readonly List<CardSlot> _active = new List<CardSlot>();
+
+        // Кэш текстур иконок — генерируются один раз
+        static readonly Dictionary<string, Texture2D> _texCache = new Dictionary<string, Texture2D>();
+
+        static Texture2D TexTool(Tool t)
+        {
+            string k = "T:" + t;
+            if (!_texCache.TryGetValue(k, out var tex)) { tex = ToolIcons.Make(t); _texCache[k] = tex; }
+            return tex;
+        }
+        static Texture2D TexService(ServiceKind k)
+        {
+            string key = "S:" + k;
+            if (!_texCache.TryGetValue(key, out var tex)) { tex = ToolIcons.MakeService(k); _texCache[key] = tex; }
+            return tex;
+        }
 
         // ──────────────────────────────────────────────────────────
         //  Tap state
@@ -67,101 +80,82 @@ namespace CityGame.City
         const float Stagger   = 0.04f;
 
         // ──────────────────────────────────────────────────────────
-        //  Игровая палитра
+        //  Цвета фона арт-панели
         // ──────────────────────────────────────────────────────────
 
-        static readonly Color32 CAT_ROADS  = new Color32(0x3B, 0x45, 0x52, 0xFF);
-        static readonly Color32 CAT_DIST   = new Color32(0x6F, 0xA8, 0xDC, 0xFF);
-        static readonly Color32 CAT_SERV   = new Color32(0xD9, 0x4F, 0x45, 0xFF);
-        static readonly Color32 CAT_ENERGY = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
-        static readonly Color32 CAT_INFRA  = new Color32(0x7A, 0xB8, 0x62, 0xFF);
-        static readonly Color32 CAT_ERASE  = new Color32(0x9A, 0xA0, 0xA6, 0xFF);
-
-        static readonly Color32 ROAD_ROAD  = new Color32(0x3B, 0x45, 0x52, 0xFF);
-        static readonly Color32 ROAD_HWY   = new Color32(0x28, 0x38, 0x52, 0xFF);
-        static readonly Color32 ROAD_OW    = new Color32(0x42, 0x55, 0x68, 0xFF);
-        static readonly Color32 ROAD_JCT   = new Color32(0x48, 0x40, 0x68, 0xFF);
-        static readonly Color32 ROAD_CANAL = new Color32(0x4F, 0xA3, 0xE0, 0xFF);
-        static readonly Color32 ROAD_RAMP  = new Color32(0xC8, 0x7A, 0x38, 0xFF);
-
-        static readonly Color32 INFRA_EXP  = new Color32(0xCD, 0xE5, 0xB0, 0xFF);
-        static readonly Color32 INFRA_PORT = new Color32(0xA9, 0xD6, 0xF2, 0xFF);
-        static readonly Color32 INFRA_BUS  = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
-
-        static readonly Color32 BLD_RES  = new Color32(0x6F, 0xA8, 0xDC, 0xFF);
-        static readonly Color32 BLD_COM  = new Color32(0xE8, 0x83, 0x8B, 0xFF);
-        static readonly Color32 BLD_IND  = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
-        static readonly Color32 SVC_AMB  = new Color32(0xD9, 0x4F, 0x45, 0xFF);
-        static readonly Color32 SVC_POL  = new Color32(0x3D, 0x5A, 0xA8, 0xFF);
-        static readonly Color32 SVC_FIRE = new Color32(0xC8, 0x3C, 0x3C, 0xFF);
-        static readonly Color32 SVC_PWR  = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
-        static readonly Color32 SVC_WAT  = new Color32(0x4F, 0xA3, 0xE0, 0xFF);
+        static readonly Color32 ART_BG    = new Color32(0xF4, 0xF0, 0xE8, 0xFF); // нейтральный под иконки
+        static readonly Color32 ART_ROADS = new Color32(0xD8, 0xDD, 0xE5, 0xFF);
+        static readonly Color32 ART_DIST  = new Color32(0xD4, 0xE5, 0xF4, 0xFF);
+        static readonly Color32 ART_SERV  = new Color32(0xF5, 0xD4, 0xD2, 0xFF);
+        static readonly Color32 ART_ENRG  = new Color32(0xF8, 0xEC, 0xCE, 0xFF);
+        static readonly Color32 ART_BACK  = new Color32(0xE4, 0xE0, 0xDA, 0xFF);
+        static readonly Color32 ART_ERASE = new Color32(0xF0, 0xD4, 0xD4, 0xFF);
 
         // ──────────────────────────────────────────────────────────
         //  Определения карточек
         // ──────────────────────────────────────────────────────────
 
-        enum CatAction { ShowRoads, ShowDistricts, ShowServices, ShowEnergy, ShowInfra, Erase }
+        enum CatAction { ShowRoads, ShowDistricts, ShowServices, ShowEnergy, Erase }
 
-        struct CatDef  { public string Title, Sub, Icon; public Color32 Art; public CatAction Action; }
-        struct ToolDef { public string Title, Sub, Icon; public Color32 Art; public Tool     Tool;    }
-        struct BldDef  { public string Title, Sub, Icon; public Color32 Art;
+        struct CatDef  { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon; public CatAction Action; }
+        struct ToolDef { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon; public Tool     Tool;    }
+        struct BldDef  { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon;
                          public BuildingCategory Category; public ServiceKind Kind; public Tool PlaceTool; }
 
-        static readonly CatDef[] CatDefs =
-        {
-            new CatDef { Title="ДОРОГИ",  Sub="трассы",  Icon="--",Art=CAT_ROADS,  Action=CatAction.ShowRoads     },
-            new CatDef { Title="РАЙОНЫ",  Sub="здания",  Icon="H", Art=CAT_DIST,   Action=CatAction.ShowDistricts },
-            new CatDef { Title="СЛУЖБЫ",  Sub="сервисы", Icon="+", Art=CAT_SERV,   Action=CatAction.ShowServices  },
-            new CatDef { Title="ЭНЕРГИЯ", Sub="питание", Icon="#", Art=CAT_ENERGY, Action=CatAction.ShowEnergy    },
-            new CatDef { Title="ИНФРА",   Sub="сектора", Icon="<>",Art=CAT_INFRA,  Action=CatAction.ShowInfra     },
-            new CatDef { Title="СНЕСТИ",  Sub="убрать",  Icon="X", Art=CAT_ERASE,  Action=CatAction.Erase         },
-        };
+        CatDef[]  _catDefs;
+        ToolDef[] _roadDefs;
+        BldDef[]  _distDefs, _servDefs, _enrgDefs;
 
-        static readonly ToolDef[] RoadDefs =
+        void InitDefs()
         {
-            new ToolDef { Title="Дорога",  Sub="улица",  Icon="__", Art=ROAD_ROAD,  Tool=Tool.Road     },
-            new ToolDef { Title="Шоссе",   Sub="быстро", Icon="==", Art=ROAD_HWY,   Tool=Tool.Highway  },
-            new ToolDef { Title="Одност.", Sub="полоса", Icon="->", Art=ROAD_OW,    Tool=Tool.OneWay   },
-            new ToolDef { Title="Развилка",Sub="узел",   Icon="Y",  Art=ROAD_JCT,   Tool=Tool.Junction },
-            new ToolDef { Title="Канал",   Sub="вода",   Icon="~~", Art=ROAD_CANAL, Tool=Tool.Canal    },
-            new ToolDef { Title="Съезд",   Sub="рампа",  Icon="/\\",Art=ROAD_RAMP,  Tool=Tool.Ramp     },
-        };
-
-        static readonly ToolDef[] InfraDefs =
-        {
-            new ToolDef { Title="Расшир.", Sub="сектор", Icon="[]", Art=INFRA_EXP,  Tool=Tool.Expand },
-            new ToolDef { Title="Порт",    Sub="море",   Icon="|>", Art=INFRA_PORT, Tool=Tool.Port   },
-            new ToolDef { Title="Автобус", Sub="маршр.", Icon="()", Art=INFRA_BUS,  Tool=Tool.Bus    },
-        };
-
-        static readonly BldDef[] DistrictDefs =
-        {
-            new BldDef { Title="Жильё",   Sub="жилой",  Icon="H", Art=BLD_RES,
-                         Category=BuildingCategory.Residential, PlaceTool=Tool.Residential },
-            new BldDef { Title="Торговля", Sub="коммер.",Icon="$", Art=BLD_COM,
-                         Category=BuildingCategory.Commercial,  PlaceTool=Tool.Commercial  },
-            new BldDef { Title="Произв.",  Sub="завод",  Icon="F", Art=BLD_IND,
-                         Category=BuildingCategory.Industrial,  PlaceTool=Tool.Industrial  },
-        };
-
-        static readonly BldDef[] ServiceDefs =
-        {
-            new BldDef { Title="Скорая",   Sub="здоровье", Icon="+", Art=SVC_AMB,
-                         Category=BuildingCategory.Service, Kind=ServiceKind.Ambulance,  PlaceTool=Tool.Service },
-            new BldDef { Title="Полиция",  Sub="охрана",   Icon="*", Art=SVC_POL,
-                         Category=BuildingCategory.Service, Kind=ServiceKind.Police,     PlaceTool=Tool.Service },
-            new BldDef { Title="Пожарные", Sub="тушение",  Icon="!", Art=SVC_FIRE,
-                         Category=BuildingCategory.Service, Kind=ServiceKind.Fire,       PlaceTool=Tool.Service },
-        };
-
-        static readonly BldDef[] EnergyDefs =
-        {
-            new BldDef { Title="Электро",   Sub="ток",  Icon="#", Art=SVC_PWR,
-                         Category=BuildingCategory.Service, Kind=ServiceKind.PowerPlant, PlaceTool=Tool.Service },
-            new BldDef { Title="Водобашня", Sub="вода", Icon="~", Art=SVC_WAT,
-                         Category=BuildingCategory.Service, Kind=ServiceKind.WaterTower, PlaceTool=Tool.Service },
-        };
+            _catDefs = new[]
+            {
+                new CatDef { Title="ДОРОГИ",  Sub="трассы",  ArtBg=ART_ROADS, Icon=TexTool(Tool.Road),        Action=CatAction.ShowRoads     },
+                new CatDef { Title="РАЙОНЫ",  Sub="здания",  ArtBg=ART_DIST,  Icon=TexTool(Tool.Residential), Action=CatAction.ShowDistricts },
+                new CatDef { Title="СЛУЖБЫ",  Sub="сервисы", ArtBg=ART_SERV,  Icon=TexTool(Tool.Service),     Action=CatAction.ShowServices  },
+                new CatDef { Title="ЭНЕРГИЯ", Sub="питание", ArtBg=ART_ENRG,  Icon=TexService(ServiceKind.PowerPlant), Action=CatAction.ShowEnergy },
+                new CatDef { Title="СНЕСТИ",  Sub="убрать",  ArtBg=ART_ERASE, Icon=TexTool(Tool.Erase),       Action=CatAction.Erase         },
+            };
+            _roadDefs = new[]
+            {
+                new ToolDef { Title="Дорога",  Sub="улица",  ArtBg=ART_ROADS, Icon=TexTool(Tool.Road),    Tool=Tool.Road     },
+                new ToolDef { Title="Шоссе",   Sub="быстро", ArtBg=ART_ROADS, Icon=TexTool(Tool.Highway), Tool=Tool.Highway  },
+                new ToolDef { Title="Одност.", Sub="полоса", ArtBg=ART_ROADS, Icon=TexTool(Tool.OneWay),  Tool=Tool.OneWay   },
+                new ToolDef { Title="Развилка",Sub="узел",   ArtBg=ART_ROADS, Icon=TexTool(Tool.Junction),Tool=Tool.Junction },
+                new ToolDef { Title="Канал",   Sub="вода",   ArtBg=ART_BG,    Icon=TexTool(Tool.Canal),   Tool=Tool.Canal    },
+                new ToolDef { Title="Съезд",   Sub="рампа",  ArtBg=ART_ROADS, Icon=TexTool(Tool.Ramp),    Tool=Tool.Ramp     },
+            };
+            _distDefs = new[]
+            {
+                new BldDef { Title="Жильё",   Sub="жилой",  ArtBg=ART_DIST,  Icon=TexTool(Tool.Residential),
+                             Category=BuildingCategory.Residential, PlaceTool=Tool.Residential },
+                new BldDef { Title="Торговля", Sub="коммер.",ArtBg=ART_DIST,  Icon=TexTool(Tool.Commercial),
+                             Category=BuildingCategory.Commercial,  PlaceTool=Tool.Commercial  },
+                new BldDef { Title="Произв.",  Sub="завод",  ArtBg=ART_DIST,  Icon=TexTool(Tool.Industrial),
+                             Category=BuildingCategory.Industrial,  PlaceTool=Tool.Industrial  },
+            };
+            _servDefs = new[]
+            {
+                new BldDef { Title="Скорая",   Sub="здоровье", ArtBg=ART_SERV,
+                             Icon=TexService(ServiceKind.Ambulance),
+                             Category=BuildingCategory.Service, Kind=ServiceKind.Ambulance,  PlaceTool=Tool.Service },
+                new BldDef { Title="Полиция",  Sub="охрана",   ArtBg=ART_SERV,
+                             Icon=TexService(ServiceKind.Police),
+                             Category=BuildingCategory.Service, Kind=ServiceKind.Police,     PlaceTool=Tool.Service },
+                new BldDef { Title="Пожарные", Sub="тушение",  ArtBg=ART_SERV,
+                             Icon=TexService(ServiceKind.Fire),
+                             Category=BuildingCategory.Service, Kind=ServiceKind.Fire,       PlaceTool=Tool.Service },
+            };
+            _enrgDefs = new[]
+            {
+                new BldDef { Title="Электро",   Sub="ток",  ArtBg=ART_ENRG,
+                             Icon=TexService(ServiceKind.PowerPlant),
+                             Category=BuildingCategory.Service, Kind=ServiceKind.PowerPlant, PlaceTool=Tool.Service },
+                new BldDef { Title="Водобашня", Sub="вода", ArtBg=ART_ENRG,
+                             Icon=TexService(ServiceKind.WaterTower),
+                             Category=BuildingCategory.Service, Kind=ServiceKind.WaterTower, PlaceTool=Tool.Service },
+            };
+        }
 
         // ──────────────────────────────────────────────────────────
         //  CardSlot
@@ -199,6 +193,7 @@ namespace CityGame.City
             _placer  = placer;
             _economy = economy;
             _hud     = hud;
+            InitDefs();
             BuildCanvas();
         }
 
@@ -254,12 +249,11 @@ namespace CityGame.City
             _canvas.gameObject.SetActive(true);
             UpdateDeckY();
 
-            int n = CatDefs.Length;
-            SpawnFan(n, i =>
+            SpawnFan(_catDefs.Length, i =>
             {
-                var d = CatDefs[i];
-                var s = new CardSlot { CatIndex=i };
-                s.Rt = CreateCard(d.Title, d.Sub, d.Icon, d.Art, 0, -CardH - 50f, 0);
+                var d = _catDefs[i];
+                var s = new CardSlot { CatIndex = i };
+                s.Rt = CreateCard(d.Title, d.Sub, d.ArtBg, d.Icon);
                 return s;
             });
         }
@@ -271,18 +265,17 @@ namespace CityGame.City
             _canvas.gameObject.SetActive(true);
             UpdateDeckY();
 
-            int total = defs.Length + 1;
-            SpawnFan(total, i =>
+            SpawnFan(defs.Length + 1, i =>
             {
                 if (i == 0)
                 {
-                    var back = new CardSlot { IsBackCard=true };
-                    back.Rt = CreateCard("<", "назад", "<", new Color32(0x60,0x60,0x60,0xFF), 0, -CardH - 50f, 0);
+                    var back = new CardSlot { IsBackCard = true };
+                    back.Rt = CreateCard("<", "назад", ART_BACK, null);
                     return back;
                 }
                 var d = defs[i - 1];
-                var s = new CardSlot { ToolDef=d };
-                s.Rt = CreateCard(d.Title, d.Sub, d.Icon, d.Art, 0, -CardH - 50f, 0);
+                var s = new CardSlot { ToolDef = d };
+                s.Rt = CreateCard(d.Title, d.Sub, d.ArtBg, d.Icon);
                 return s;
             });
         }
@@ -294,19 +287,18 @@ namespace CityGame.City
             _canvas.gameObject.SetActive(true);
             UpdateDeckY();
 
-            int total = defs.Length + 1;
-            SpawnFan(total, i =>
+            SpawnFan(defs.Length + 1, i =>
             {
                 if (i == 0)
                 {
-                    var back = new CardSlot { IsBackCard=true };
-                    back.Rt = CreateCard("<", "назад", "<", new Color32(0x60,0x60,0x60,0xFF), 0, -CardH - 50f, 0);
+                    var back = new CardSlot { IsBackCard = true };
+                    back.Rt = CreateCard("<", "назад", ART_BACK, null);
                     return back;
                 }
                 var d = defs[i - 1];
                 string sub = _economy != null ? _economy.CostOf(d.Category, d.Kind).ToString("0") + "B" : d.Sub;
-                var s = new CardSlot { IsBldCard=true, BldDef=d };
-                s.Rt = CreateCard(d.Title, sub, d.Icon, d.Art, 0, -CardH - 50f, 0);
+                var s = new CardSlot { IsBldCard = true, BldDef = d };
+                s.Rt = CreateCard(d.Title, sub, d.ArtBg, d.Icon);
                 return s;
             });
         }
@@ -338,7 +330,7 @@ namespace CityGame.City
         //  Построение одной карточки
         // ──────────────────────────────────────────────────────────
 
-        RectTransform CreateCard(string title, string sub, string icon, Color32 art, float x, float y, float rot)
+        RectTransform CreateCard(string title, string sub, Color32 artBg, Texture2D iconTex)
         {
             var go = new GameObject("Card_" + title);
             go.transform.SetParent(_deckRoot, false);
@@ -347,80 +339,77 @@ namespace CityGame.City
             rt.anchorMax        = new Vector2(0.5f, 0f);
             rt.pivot            = new Vector2(0.5f, 0f);
             rt.sizeDelta        = new Vector2(CardW, CardH);
-            rt.anchoredPosition = new Vector2(x, y);
-            rt.localEulerAngles = new Vector3(0, 0, rot);
+            rt.anchoredPosition = new Vector2(0, -CardH - 50f);
+            rt.localEulerAngles = Vector3.zero;
 
             // Тень
-            {
-                var sh = new GameObject("Shadow"); sh.transform.SetParent(go.transform, false);
-                var shRt = sh.AddComponent<RectTransform>();
-                shRt.anchorMin=Vector2.zero; shRt.anchorMax=Vector2.one;
-                shRt.offsetMin=new Vector2(3,-4); shRt.offsetMax=new Vector2(4,-3);
-                sh.AddComponent<Image>().color = new Color(0,0,0,0.20f);
-            }
-            // Рамка
-            AddRect(go.transform, "Frame", Vector2.zero, Vector2.zero, Vector2.zero,
-                    new Color32(0x4A,0x40,0x34,0xFF));
+            var sh = new GameObject("Sh"); sh.transform.SetParent(go.transform, false);
+            var shRt = sh.AddComponent<RectTransform>();
+            shRt.anchorMin=Vector2.zero; shRt.anchorMax=Vector2.one;
+            shRt.offsetMin=new Vector2(3,-4); shRt.offsetMax=new Vector2(4,-3);
+            sh.AddComponent<Image>().color = new Color(0,0,0,0.18f);
 
-            // Фон
-            AddRect(go.transform, "Bg", Vector2.zero, new Vector2(2,2), new Vector2(-2,-2),
-                    new Color32(0xF0,0xEB,0xE2,0xFF));
+            // Рамка
+            var fr = new GameObject("Fr"); fr.transform.SetParent(go.transform, false);
+            var frRt = fr.AddComponent<RectTransform>();
+            frRt.anchorMin=Vector2.zero; frRt.anchorMax=Vector2.one;
+            frRt.offsetMin=Vector2.zero; frRt.offsetMax=Vector2.zero;
+            fr.AddComponent<Image>().color = new Color32(0x4A,0x40,0x34,0xFF);
+
+            // Фон карты
+            var bg = new GameObject("Bg"); bg.transform.SetParent(go.transform, false);
+            var bgRt = bg.AddComponent<RectTransform>();
+            bgRt.anchorMin=Vector2.zero; bgRt.anchorMax=Vector2.one;
+            bgRt.offsetMin=new Vector2(2,2); bgRt.offsetMax=new Vector2(-2,-2);
+            bg.AddComponent<Image>().color = new Color32(0xF0,0xEB,0xE2,0xFF);
 
             // Арт-панель (верхние ~64%)
-            var artGo = new GameObject("Art"); artGo.transform.SetParent(go.transform, false);
-            var artRt = artGo.AddComponent<RectTransform>();
-            artRt.anchorMin = new Vector2(0f, 0.36f); artRt.anchorMax = Vector2.one;
-            artRt.offsetMin = new Vector2(2,0); artRt.offsetMax = new Vector2(-2,-2);
-            artGo.AddComponent<Image>().color = art;
+            var art = new GameObject("Art"); art.transform.SetParent(go.transform, false);
+            var artRt = art.AddComponent<RectTransform>();
+            artRt.anchorMin=new Vector2(0f,0.34f); artRt.anchorMax=Vector2.one;
+            artRt.offsetMin=new Vector2(2,0); artRt.offsetMax=new Vector2(-2,-2);
+            art.AddComponent<Image>().color = artBg;
 
-            // Иконка — большой белый текст по центру (верхние 62% арта)
-            if (!string.IsNullOrEmpty(icon))
-                AddLabel(artGo.transform, "Icon", icon, 22, FontStyle.Bold,
-                         new Color(1f,1f,1f,0.88f), TextAnchor.MiddleCenter,
-                         new Vector2(0f,0.38f), Vector2.one);
+            // Иконка-текстура (RawImage, занимает большую часть арт-панели)
+            if (iconTex != null)
+            {
+                var ic = new GameObject("Ico"); ic.transform.SetParent(art.transform, false);
+                var icRt = ic.AddComponent<RectTransform>();
+                icRt.anchorMin=new Vector2(0.08f,0.32f); icRt.anchorMax=new Vector2(0.92f,0.98f);
+                icRt.offsetMin=Vector2.zero; icRt.offsetMax=Vector2.zero;
+                var raw = ic.AddComponent<RawImage>();
+                raw.texture = iconTex;
+                raw.raycastTarget = false;
+            }
 
-            // Название — нижние 38% арта
-            AddLabel(artGo.transform, "Title", title, 9, FontStyle.Bold,
-                     Color.white, TextAnchor.LowerCenter,
-                     Vector2.zero, new Vector2(1f,0.38f));
+            // Подпись в нижней полосе арта
+            var tn = new GameObject("Tn"); tn.transform.SetParent(art.transform, false);
+            var tnRt = tn.AddComponent<RectTransform>();
+            tnRt.anchorMin=new Vector2(0,0); tnRt.anchorMax=new Vector2(1,0.30f);
+            tnRt.offsetMin=new Vector2(1,0); tnRt.offsetMax=new Vector2(-1,0);
+            var tnTxt = tn.AddComponent<Text>();
+            tnTxt.text=title; tnTxt.fontSize=9; tnTxt.fontStyle=FontStyle.Bold;
+            tnTxt.color=new Color32(0x2A,0x22,0x16,0xFF);
+            tnTxt.alignment=TextAnchor.LowerCenter; tnTxt.raycastTarget=false;
+            tnTxt.font=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            // Нижняя полоса
-            var botGo = new GameObject("Bot"); botGo.transform.SetParent(go.transform, false);
-            var botRt = botGo.AddComponent<RectTransform>();
-            botRt.anchorMin = new Vector2(0f,0f); botRt.anchorMax = new Vector2(1f,0.36f);
-            botRt.offsetMin = new Vector2(2,2); botRt.offsetMax = new Vector2(-2,0);
-            botGo.AddComponent<Image>().color = new Color32(0xE0,0xD9,0xCF,0xFF);
+            // Нижняя полоса с суб-текстом
+            var bot = new GameObject("Bot"); bot.transform.SetParent(go.transform, false);
+            var botRt = bot.AddComponent<RectTransform>();
+            botRt.anchorMin=new Vector2(0,0); botRt.anchorMax=new Vector2(1,0.34f);
+            botRt.offsetMin=new Vector2(2,2); botRt.offsetMax=new Vector2(-2,0);
+            bot.AddComponent<Image>().color = new Color32(0xE0,0xD9,0xCF,0xFF);
 
-            AddLabel(botGo.transform, "Sub", sub, 8, FontStyle.Normal,
-                     new Color32(0x4A,0x3C,0x2C,0xFF), TextAnchor.MiddleCenter,
-                     Vector2.zero, Vector2.one);
+            var su = new GameObject("Su"); su.transform.SetParent(bot.transform, false);
+            var suRt = su.AddComponent<RectTransform>();
+            suRt.anchorMin=Vector2.zero; suRt.anchorMax=Vector2.one;
+            suRt.offsetMin=new Vector2(1,0); suRt.offsetMax=new Vector2(-1,0);
+            var suTxt = su.AddComponent<Text>();
+            suTxt.text=sub; suTxt.fontSize=8; suTxt.color=new Color32(0x4A,0x3C,0x2C,0xFF);
+            suTxt.alignment=TextAnchor.MiddleCenter; suTxt.raycastTarget=false;
+            suTxt.font=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
             return rt;
-        }
-
-        static void AddRect(Transform parent, string name, Vector2 offset, Vector2 oMin, Vector2 oMax, Color color,
-                            Vector2? extraOffset = null)
-        {
-            var go = new GameObject(name); go.transform.SetParent(parent, false);
-            var rt = go.AddComponent<RectTransform>();
-            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
-            rt.offsetMin = oMin;
-            rt.offsetMax = oMax;
-            rt.anchoredPosition += offset;
-            go.AddComponent<Image>().color = color;
-        }
-
-        static void AddLabel(Transform parent, string name, string text, int size, FontStyle style,
-                             Color color, TextAnchor anchor, Vector2 aMin, Vector2 aMax)
-        {
-            var go = new GameObject(name); go.transform.SetParent(parent, false);
-            var rt = go.AddComponent<RectTransform>();
-            rt.anchorMin = aMin; rt.anchorMax = aMax;
-            rt.offsetMin = new Vector2(1,1); rt.offsetMax = new Vector2(-1,-1);
-            var t = go.AddComponent<Text>();
-            t.text = text; t.fontSize = size; t.fontStyle = style; t.color = color;
-            t.alignment = anchor; t.raycastTarget = false;
-            t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         }
 
         // ──────────────────────────────────────────────────────────
@@ -479,7 +468,7 @@ namespace CityGame.City
         }
 
         // ──────────────────────────────────────────────────────────
-        //  Ввод — hover + tap (без drag-to-place)
+        //  Ввод
         // ──────────────────────────────────────────────────────────
 
         void HandleInput()
@@ -518,7 +507,7 @@ namespace CityGame.City
                 var slot = _held; _held = null;
                 bool isTap = Vector2.Distance(pos, _pressPos) < TapMovePx;
 
-                // Возврат карточки — только если колода ещё видна (не была скрыта в этот же кадр)
+                // Возврат на место — только если колода ещё не скрыта
                 if (_state != DeckState.Hidden && slot.Rt != null && slot.Rt.gameObject != null)
                 {
                     slot.Tween?.Kill();
@@ -550,25 +539,18 @@ namespace CityGame.City
 
         void OnCardTapped(CardSlot slot)
         {
-            if (slot.IsBackCard)
-            {
-                ShowCategories();
-                return;
-            }
+            if (slot.IsBackCard) { ShowCategories(); return; }
 
             if (_state == DeckState.Categories)
             {
-                switch (CatDefs[slot.CatIndex].Action)
+                switch (_catDefs[slot.CatIndex].Action)
                 {
-                    case CatAction.ShowRoads:      ShowTools(RoadDefs);         break;
-                    case CatAction.ShowDistricts:  ShowBuildings(DistrictDefs); break;
-                    case CatAction.ShowServices:   ShowBuildings(ServiceDefs);  break;
-                    case CatAction.ShowEnergy:     ShowBuildings(EnergyDefs);   break;
-                    case CatAction.ShowInfra:      ShowTools(InfraDefs);        break;
+                    case CatAction.ShowRoads:      ShowTools(_roadDefs);    break;
+                    case CatAction.ShowDistricts:  ShowBuildings(_distDefs); break;
+                    case CatAction.ShowServices:   ShowBuildings(_servDefs); break;
+                    case CatAction.ShowEnergy:     ShowBuildings(_enrgDefs); break;
                     case CatAction.Erase:
-                        HideAll();
-                        ToolRequested?.Invoke(Tool.Erase);
-                        break;
+                        HideAll(); ToolRequested?.Invoke(Tool.Erase); break;
                 }
                 return;
             }
