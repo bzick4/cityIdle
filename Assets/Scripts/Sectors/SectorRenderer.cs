@@ -218,6 +218,7 @@ namespace CityGame.Sectors
 
             d.Root = new GameObject("Dropping sector");
             d.Root.transform.SetParent(transform, false);
+            d.Root.transform.position = new Vector3(c.x, c.y, 0f);
 
             // Плитка и сетка. Координаты локальные, чтобы масштаб шёл от центра сектора.
             GameObject ground = Make("Drop ground", one, BiomeSpecs.Ground(b), -19, c);   // выше деревьев соседей, пока сектор в воздухе
