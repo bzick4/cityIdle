@@ -32,9 +32,9 @@ namespace CityGame.Buildings
         {
             switch (c)
             {
-                case BuildingCategory.Residential: return new Color32(0x54, 0x98, 0xEC, 0xFF);
-                case BuildingCategory.Commercial: return new Color32(0xF2, 0x6C, 0x72, 0xFF);
-                case BuildingCategory.Industrial: return new Color32(0xF5, 0xBC, 0x2C, 0xFF);
+                case BuildingCategory.Residential: return new Color32(0x6F, 0xA8, 0xDC, 0xFF);
+                case BuildingCategory.Commercial: return new Color32(0xE8, 0x83, 0x8B, 0xFF);
+                case BuildingCategory.Industrial: return new Color32(0xF2, 0xC1, 0x4E, 0xFF);
                 default: return ServiceSpecs.Color(kind);
             }
         }
@@ -101,11 +101,11 @@ namespace CityGame.Buildings
         {
             switch (k)
             {
-                case ServiceKind.Ambulance: return new Color32(0xEA, 0xF2, 0xFA, 0xFF);
-                case ServiceKind.Police: return new Color32(0x3E, 0x64, 0xC8, 0xFF);
-                case ServiceKind.PowerPlant: return new Color32(0xF5, 0xBC, 0x2C, 0xFF);
-                case ServiceKind.WaterTower: return new Color32(0x42, 0xA8, 0xF0, 0xFF);
-                default: return new Color32(0xE8, 0x3C, 0x3C, 0xFF);
+                case ServiceKind.Ambulance: return new Color32(0xE9, 0xEE, 0xF2, 0xFF);
+                case ServiceKind.Police: return new Color32(0x3D, 0x5A, 0xA8, 0xFF);
+                case ServiceKind.PowerPlant: return new Color32(0xF2, 0xC1, 0x4E, 0xFF);
+                case ServiceKind.WaterTower: return new Color32(0x4F, 0xA3, 0xE0, 0xFF);
+                default: return new Color32(0xD9, 0x4F, 0x45, 0xFF);
             }
         }
 

@@ -20,7 +20,7 @@ namespace CityGame
         public float WorldWidth = 18f;
         public float MinWorldWidth = 6f;
         public float MaxWorldWidth = 60f;
-        public Color Background = new Color32(0x1C, 0x28, 0x38, 0xFF);
+        public Color Background = new Color32(0x2B, 0x31, 0x3A, 0xFF);
 
         [Tooltip("Один палец двигает карту (режим «Рука»)")]
         public bool PanEnabled;

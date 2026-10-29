@@ -30,14 +30,14 @@ namespace CityGame.Roads
         }
 
         /// <summary>Желтый цвет разделительной полосы шоссе.</summary>
-        public static readonly Color HighwayMedianColor = new Color32(0xF5, 0xBC, 0x2C, 0xFF);
+        public static readonly Color HighwayMedianColor = new Color32(0xF2, 0xB8, 0x4B, 0xFF);
         /// <summary>Кремовый цвет разметки (пунктир, боковые линии).</summary>
-        public static readonly Color MarkingColor = new Color32(0xE4, 0xDE, 0xC8, 0xFF);
+        public static readonly Color MarkingColor = new Color32(0xE9, 0xE6, 0xDA, 0xFF);
 
         public static Color BodyColor(RoadType type)
         {
             // Оба типа дорог — один и тот же тёмный корпус. Шоссе отличается шириной и жёлтой осевой.
-            return new Color(0.20f, 0.26f, 0.34f, 1f);
+            return new Color(0.231f, 0.271f, 0.322f, 1f);
         }
 
         public static int SortingOrder(RoadLayer layer)

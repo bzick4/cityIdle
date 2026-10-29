@@ -32,17 +32,17 @@ namespace CityGame.Sectors
         /// <summary>Горы: дорога идёт тоннелем и стоит дороже в полтора раза.</summary>
         public const float MountainRoadCostFactor = 1.5f;
 
-        public static readonly Color ClosedColor = new Color32(0x1C, 0x24, 0x30, 0xFF);
+        public static readonly Color ClosedColor = new Color32(0x1F, 0x23, 0x29, 0xFF);
 
         public static Color Ground(Biome b)
         {
             switch (b)
             {
-                case Biome.Snow: return new Color32(0xE6, 0xF2, 0xF8, 0xFF);
-                case Biome.Mountain: return new Color32(0x86, 0x96, 0xA6, 0xFF);
-                case Biome.Desert: return new Color32(0xF0, 0xC8, 0x60, 0xFF);
-                case Biome.Sea: return new Color32(0x44, 0xB4, 0xE2, 0xFF);
-                default: return new Color32(0x8C, 0xCF, 0x58, 0xFF);
+                case Biome.Snow: return new Color32(0xF7, 0xFA, 0xFC, 0xFF);
+                case Biome.Mountain: return new Color32(0x9A, 0xA0, 0xA6, 0xFF);
+                case Biome.Desert: return new Color32(0xE8, 0xD5, 0xA3, 0xFF);
+                case Biome.Sea: return new Color32(0xA9, 0xD6, 0xF2, 0xFF);
+                default: return new Color32(0xCD, 0xE5, 0xB0, 0xFF);
             }
         }
 
