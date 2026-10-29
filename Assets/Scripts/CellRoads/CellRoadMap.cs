@@ -1221,6 +1221,7 @@ namespace CityGame.CellRoads
             var interior = new HashSet<Vector2Int>();
             for (int i = 1; i < cells.Count - 1; i++) interior.Add(cells[i]);
             _strokes.Add(new RoadStroke { From = from, To = to, Interior = interior, HalfWidthFraction = halfWidthFraction });
+            RaiseChanged();
         }
 
         /// <summary>Алгоритм Брезенхема: возвращает клетки от from до to включительно.</summary>
