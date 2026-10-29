@@ -1,5 +1,6 @@
 using CityGame.CellRoads;
 using CityGame.Cars;
+using CityGame.City;
 using CityGame.Flow;
 using System.Collections.Generic;
 using CityGame.Roads;
@@ -72,6 +73,8 @@ namespace CityGame.Buildings
         public CanalDrawer CanalTool { get; private set; }
         public RampTool RampingTool { get; private set; }
         public RampMap Ramps { get; private set; }
+        public BuildingTapper BuildingTapper { get; private set; }
+        public CityCardView CardView { get; private set; }
 
         /// <summary>Штрих выбранного инструмента (дорога, шоссе, односторонняя, канал, съезд) или null.</summary>
         public IRoadStroke ActiveStroke
@@ -479,6 +482,15 @@ namespace CityGame.Buildings
             BusTool.IsPointerBlocked = _hud.IsPointerBlocked;
             Rig.IsPointerBlocked = _hud.IsPointerBlocked;
 
+            CardView = GetOrAdd<CityCardView>();
+            CardView.Bind(Model, Economy, Coverage);
+            BuildingTapper = GetOrAdd<BuildingTapper>();
+            BuildingTapper.CellSize = CellSize;
+            BuildingTapper.Bind(Model);
+            BuildingTapper.IsPointerBlocked = _hud.IsPointerBlocked;
+            BuildingTapper.Tapped += CardView.Show;
+            BuildingTapper.enabled = false;
+
             Started = true;
             if (data != null) Apply(data);
             else Rig.SetStartView(Vector2.zero, HexSize, InitialNeighborVisibleFraction);
@@ -520,6 +532,7 @@ namespace CityGame.Buildings
             BusTool.enabled = tool == Tool.Bus;
             RampingTool.enabled = tool == Tool.Ramp;
             Rig.PanEnabled = tool == Tool.Pan;
+            if (BuildingTapper != null) BuildingTapper.enabled = tool == Tool.Pan;
 
             ServiceZones.Emphasis = tool == Tool.Service;
             Placer.EraseMode = tool == Tool.Erase;
