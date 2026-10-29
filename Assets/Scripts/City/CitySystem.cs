@@ -495,8 +495,7 @@ namespace CityGame.Buildings
             CardDeck = GetOrAdd<BuildingCardDeck>();
             CardDeck.CellSize = CellSize;
             CardDeck.Bind(Placer, Economy, _hud);
-            CardDeck.RoadsRequested += () => _hud.OpenRoadsPage();
-            CardDeck.EraseRequested += () => Select(Tool.Erase);
+            CardDeck.ToolRequested += Select;
 
             Started = true;
             if (data != null) Apply(data);
