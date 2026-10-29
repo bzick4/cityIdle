@@ -4,30 +4,20 @@ using UnityEngine;
 
 namespace CityGame.CellRoads
 {
-    /// <summary>Стороны клетки как биты: N/E/S/W + диагонали NE/SE/SW/NW.</summary>
+    /// <summary>Стороны клетки как биты: север, восток, юг, запад.</summary>
     public static class Side
     {
         public const int N = 1, E = 2, S = 4, W = 8;
-        public const int NE = 16, SE = 32, SW = 64, NW = 128;
-        public const int DiagonalMask = NE | SE | SW | NW;
-        public static readonly int[] All = { N, E, S, W, NE, SE, SW, NW };
-        public static readonly int[] Cardinal = { N, E, S, W };
-
-        public static bool IsDiagonal(int side) => (side & DiagonalMask) != 0;
+        public static readonly int[] All = { N, E, S, W };
 
         public static Vector2Int Vec(int side)
         {
             switch (side)
             {
-                case N:  return new Vector2Int(0, 1);
-                case E:  return new Vector2Int(1, 0);
-                case S:  return new Vector2Int(0, -1);
-                case W:  return new Vector2Int(-1, 0);
-                case NE: return new Vector2Int(1, 1);
-                case SE: return new Vector2Int(1, -1);
-                case SW: return new Vector2Int(-1, -1);
-                case NW: return new Vector2Int(-1, 1);
-                default: return Vector2Int.zero;
+                case N: return new Vector2Int(0, 1);
+                case E: return new Vector2Int(1, 0);
+                case S: return new Vector2Int(0, -1);
+                default: return new Vector2Int(-1, 0);
             }
         }
 
@@ -35,49 +25,30 @@ namespace CityGame.CellRoads
         {
             switch (side)
             {
-                case N:  return S;
-                case S:  return N;
-                case E:  return W;
-                case W:  return E;
-                case NE: return SW;
-                case SW: return NE;
-                case SE: return NW;
-                case NW: return SE;
-                default: return 0;
+                case N: return S;
+                case S: return N;
+                case E: return W;
+                default: return E;
             }
         }
 
-        /// <summary>Сторона по смещению на одну клетку (4 кардинальных + 4 диагональных), 0 если не сосед.</summary>
+        /// <summary>Сторона по смещению на одну клетку, 0 если клетки не соседние.</summary>
         public static int FromDelta(Vector2Int d)
         {
-            if (d == new Vector2Int(0, 1))   return N;
-            if (d == new Vector2Int(1, 0))   return E;
-            if (d == new Vector2Int(0, -1))  return S;
-            if (d == new Vector2Int(-1, 0))  return W;
-            if (d == new Vector2Int(1, 1))   return NE;
-            if (d == new Vector2Int(1, -1))  return SE;
-            if (d == new Vector2Int(-1, -1)) return SW;
-            if (d == new Vector2Int(-1, 1))  return NW;
+            if (d == new Vector2Int(0, 1)) return N;
+            if (d == new Vector2Int(1, 0)) return E;
+            if (d == new Vector2Int(0, -1)) return S;
+            if (d == new Vector2Int(-1, 0)) return W;
             return 0;
         }
 
         public static int Count(int mask)
         {
             int n = 0;
-            foreach (int s in All)
-                if ((mask & s) != 0) n++;
+            for (int i = 0; i < 4; i++)
+                if ((mask & All[i]) != 0) n++;
             return n;
         }
-    }
-
-    /// <summary>Сохранённый штрих дороги: мировые координаты начала и конца + внутренние клетки (не на стыке).</summary>
-    public struct RoadStroke
-    {
-        public Vector2 From;
-        public Vector2 To;
-        public HashSet<Vector2Int> Interior;
-        /// <summary>Половина ширины в долях клетки. 0 = обычная дорога (widthFraction*0.5). >0 = шоссе/одностороннее.</summary>
-        public float HalfWidthFraction;
     }
 
     /// <summary>
@@ -94,10 +65,6 @@ namespace CityGame.CellRoads
         readonly HashSet<Vector2Int> _standaloneHighwayCells = new HashSet<Vector2Int>();
         readonly HashSet<Vector2Int> _ownedHighwayCells = new HashSet<Vector2Int>();
         readonly Dictionary<Vector2Int, int> _standaloneOriginalMasks = new Dictionary<Vector2Int, int>();
-        readonly List<RoadStroke> _strokes = new List<RoadStroke>();
-
-        /// <summary>Все сохранённые прямолинейные штрихи (для рендеринга без зигзага).</summary>
-        public IReadOnlyList<RoadStroke> Strokes => _strokes;
 
         public event Action Changed;
 
@@ -722,12 +689,6 @@ namespace CityGame.CellRoads
             }
 
             for (int i = 0; i < path.Count; i++)
-            {
-                if (crossing[i]) continue;
-                _standaloneHighwayCells.Add(path[i]);
-            }
-
-            for (int i = 0; i < path.Count; i++)
                 if (crossing[i]) MakeBridge(path[i], Side.FromDelta(path[i + 1] - path[i]));
 
             if (extendFromFirst && routeSign < 0) preserveDirection[0] = true;
@@ -1157,7 +1118,6 @@ namespace CityGame.CellRoads
             _standaloneHighwayCells.Clear();
             _ownedHighwayCells.Clear();
             _standaloneOriginalMasks.Clear();
-            _strokes.Clear();
             foreach (var kv in masks) _masks[kv.Key] = kv.Value;
             foreach (var kv in types)
                 if (_masks.ContainsKey(kv.Key) && IsValid(kv.Key, kv.Value)) _types[kv.Key] = kv.Value;
@@ -1218,50 +1178,6 @@ namespace CityGame.CellRoads
             for (int i = 0; i < path.Count; i++)
                 if (!_masks.ContainsKey(path[i])) n++;
             return n;
-        }
-
-        /// <summary>Запоминает прямолинейный штрих для последующего рендеринга единым квадом.</summary>
-        public void AddStroke(Vector2 from, Vector2 to, IList<Vector2Int> cells, float halfWidthFraction = 0f)
-        {
-            if (cells == null || cells.Count < 2) return;
-            var interior = new HashSet<Vector2Int>();
-            for (int i = 1; i < cells.Count - 1; i++) interior.Add(cells[i]);
-            _strokes.Add(new RoadStroke { From = from, To = to, Interior = interior, HalfWidthFraction = halfWidthFraction });
-            RaiseChanged();
-        }
-
-        /// <summary>Алгоритм Брезенхема: возвращает клетки от from до to включительно.</summary>
-        public static void BresenhamLine(Vector2Int from, Vector2Int to, List<Vector2Int> result)
-        {
-            result.Clear();
-            result.Add(from);
-            int dx = to.x - from.x, dy = to.y - from.y;
-            int ax = Mathf.Abs(dx), ay = Mathf.Abs(dy);
-            int sx = dx > 0 ? 1 : dx < 0 ? -1 : 0;
-            int sy = dy > 0 ? 1 : dy < 0 ? -1 : 0;
-            int x = from.x, y = from.y;
-            if (ax >= ay)
-            {
-                int err = ax / 2;
-                for (int i = 0; i < ax; i++)
-                {
-                    err -= ay;
-                    if (err < 0) { y += sy; err += ax; }
-                    x += sx;
-                    result.Add(new Vector2Int(x, y));
-                }
-            }
-            else
-            {
-                int err = ay / 2;
-                for (int i = 0; i < ay; i++)
-                {
-                    err -= ax;
-                    if (err < 0) { x += sx; err += ay; }
-                    y += sy;
-                    result.Add(new Vector2Int(x, y));
-                }
-            }
         }
 
         public void AddPath(IReadOnlyList<Vector2Int> path)

@@ -31,17 +31,15 @@ namespace CityGame.CellRoads
         public Func<Vector2Int, bool> IsOccupied;
         readonly List<Vector2Int> _path = new List<Vector2Int>();
         bool _drawing;
-        Vector2Int _startCell;
-        Vector2 _startTangent;
+        bool _axisKnown;
+        bool _horizontal;
         LineRenderer _preview;
         Material _previewMaterial;
         bool _pending;
         bool _trimmed;
         string _problem;
-        // Параметры кривой Безье для плавного превью во время рисования.
-        Vector2 _bezP0, _bezP1, _bezP2, _bezP3;
-        bool _hasBezPreview;
         public string Problem => _problem;
+        public string LengthLabel => _path.Count + " кл.";
 
         public bool Drawing => _drawing;
         public bool Pending => _pending;
@@ -49,7 +47,6 @@ namespace CityGame.CellRoads
         public IReadOnlyList<Vector2Int> Path => _path;
         public float Money => _economy != null ? _economy.Money : 0f;
         public float StrokeWidth => OneWayMode ? 0.5f : 0.88f;
-        public string LengthLabel => _path.Count + " кл.";
         Camera IRoadStroke.Cam => Cam;
         public float StrokeCost => Evaluate(null, false);
         public event Action<IReadOnlyList<Vector2Int>, float> Committed;
@@ -198,15 +195,14 @@ namespace CityGame.CellRoads
 
                 _pending = false;
                 _drawing = true;
-                _startCell = start;
-                _startTangent = GetStartTangent(start);
                 _path.Clear();
                 _path.Add(start);
+                _axisKnown = false;
                 UpdatePreview();
             }
 
             if (!_drawing) return;
-            if (PointerInput.Pressed && !PointerInput.Up) SetEnd(PointerInput.Position);
+            if (PointerInput.Pressed && !PointerInput.Up) Follow(ToCell(PointerInput.Position));
             if (PointerInput.Up) EndStroke();
         }
 
@@ -215,118 +211,62 @@ namespace CityGame.CellRoads
 
         bool Closed => _path.Count > 2 && _path[0] == _path[_path.Count - 1];
 
-        /// <summary>Пересчитывает путь от начальной клетки до точки под пальцем по алгоритму Брезенхема.</summary>
-        void SetEnd(Vector2 screen)
+        void Follow(Vector2Int target)
         {
-            Vector3 wp = Cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -Cam.transform.position.z));
-            Vector2 world = new Vector2(wp.x, wp.y);
-            Vector2 startWorld = new Vector2((_startCell.x + 0.5f) * CellSize, (_startCell.y + 0.5f) * CellSize);
-
-            StoreBezPreview(startWorld, _startTangent, world);
-
-            Vector2Int endCell = ToCell(screen);
-            var line = new List<Vector2Int>();
-            Vector2Int hDelta = endCell - _startCell;
-            if (hDelta == Vector2Int.zero)
+            for (int guard = 0; guard < 128; guard++)
             {
-                line.Add(_startCell);
-            }
-            else if (Mathf.Abs(hDelta.x) >= Mathf.Abs(hDelta.y))
-            {
-                int sx = hDelta.x > 0 ? 1 : -1;
-                for (int x = _startCell.x; x != endCell.x + sx; x += sx)
-                    line.Add(new Vector2Int(x, _startCell.y));
-            }
-            else
-            {
-                int sy = hDelta.y > 0 ? 1 : -1;
-                for (int y = _startCell.y; y != endCell.y + sy; y += sy)
-                    line.Add(new Vector2Int(_startCell.x, y));
-            }
-
-            _path.Clear();
-            _path.Add(_startCell);
-            var seen = new HashSet<Vector2Int> { _startCell };
-
-            for (int i = 1; i < line.Count; i++)
-            {
-                Vector2Int from = _path[_path.Count - 1];
-                Vector2Int to = line[i];
-                if (from == to) continue;
-
-                // Замыкание кольца: Брезенхем дошёл обратно к началу.
-                bool startIsHighwayEnd = _map.LaneAt(_startCell).Active && Side.Count(_map.Mask(_startCell)) == 1;
-                if (to == _startCell && !Closed && _path.Count >= MinRingCells &&
-                    (!_map.LaneAt(_startCell).Active || startIsHighwayEnd))
+                Vector2Int tail = _path[_path.Count - 1];
+                if (tail == target) return;
+                int existing = _path.IndexOf(target);
+                bool toRingStart = existing == 0 && !Closed && _path.Count >= MinRingCells &&
+                                   !_map.LaneAt(_path[0]).Active;
+                if (toRingStart && Mathf.Abs(tail.x - target.x) + Mathf.Abs(tail.y - target.y) == 1)
                 {
-                    _path.Add(to);
-                    break;
+                    // Тянем к началу и на последнем шаге замыкаем кольцо (как МКАД).
+                    _path.Add(target);
+                    UpdatePreview();
+                    return;
                 }
 
-                if (seen.Contains(to)) break;
-                if (!CanStep(from, to)) break;
-                _path.Add(to);
-                seen.Add(to);
+                // Палец прошёл над началом длинного маршрута, но хвост ещё не рядом: не откатываем маршрут,
+                // а продолжаем тянуть к цели.
+                if (existing >= 0 && !toRingStart)
+                {
+                    _path.RemoveRange(existing + 1, _path.Count - existing - 1);
+                    _axisKnown = false;
+                    UpdatePreview();
+                    return;
+                }
+
+                if (Closed) return; // кольцо замкнуто: дальше тянуть некуда, можно только откатить назад
+
+                Vector2Int delta = target - tail;
+                if (!_axisKnown)
+                {
+                    _horizontal = Mathf.Abs(delta.x) >= Mathf.Abs(delta.y);
+                    _axisKnown = true;
+                }
+
+                int along = _horizontal ? delta.x : delta.y;
+                int across = _horizontal ? delta.y : delta.x;
+                // Не меняем ось, пока не дошли до цели по текущему направлению.
+                // Иначе при диагональном движении палец заставляет маршрут метаться между осями.
+                if (along == 0 && Mathf.Abs(across) >= Mathf.Max(1, TurnThreshold))
+                {
+                    _horizontal = !_horizontal;
+                    along = _horizontal ? delta.x : delta.y;
+                }
+                if (along == 0) return;
+
+                Vector2Int step = _horizontal
+                    ? new Vector2Int(along > 0 ? 1 : -1, 0)
+                    : new Vector2Int(0, along > 0 ? 1 : -1);
+                Vector2Int next = tail + step;
+                if (!CanStep(tail, next)) return;
+
+                _path.Add(next);
+                UpdatePreview();
             }
-            UpdatePreview();
-        }
-
-        void StoreBezPreview(Vector2 start, Vector2 t0, Vector2 end)
-        {
-            float dist = Vector2.Distance(start, end);
-            if (dist < 0.01f) { _hasBezPreview = false; return; }
-            Vector2 chord = (end - start) / dist;
-            if (t0 == Vector2.zero) t0 = chord;
-            if (Vector2.Dot(t0, chord) < -0.1f)
-                t0 = Vector2.Lerp(chord, t0, 0.3f).normalized;
-            float h = dist * 0.38f;
-            _bezP0 = start;
-            _bezP1 = start + t0 * h;
-            _bezP2 = end - chord * h;
-            _bezP3 = end;
-            _hasBezPreview = true;
-        }
-
-        List<Vector2Int> RasterizeBezier(Vector2 start, Vector2 t0, Vector2 end)
-        {
-            float dist = Vector2.Distance(start, end);
-            if (dist < 0.01f) return new List<Vector2Int> { _startCell };
-            Vector2 chord = (end - start).normalized;
-            if (t0 == Vector2.zero) t0 = chord;
-            if (Vector2.Dot(t0, chord) < -0.1f)
-                t0 = Vector2.Lerp(chord, t0, 0.3f).normalized;
-            float h = dist * 0.38f;
-            Vector2 p1 = start + t0 * h;
-            Vector2 p2 = end - chord * h;
-            int steps = Mathf.Clamp(Mathf.RoundToInt(dist / (CellSize * 0.15f)), 4, 300);
-            var result = new List<Vector2Int>(steps);
-            Vector2Int prev = new Vector2Int(int.MinValue, int.MinValue);
-            for (int i = 0; i <= steps; i++)
-            {
-                float t = i / (float)steps;
-                float u = 1f - t;
-                Vector2 pt = u*u*u * start + 3f*u*u*t * p1 + 3f*u*t*t * p2 + t*t*t * end;
-                Vector2Int cell = new Vector2Int(Mathf.FloorToInt(pt.x / CellSize), Mathf.FloorToInt(pt.y / CellSize));
-                if (cell != prev) { result.Add(cell); prev = cell; }
-            }
-            return result;
-        }
-
-        Vector2 GetStartTangent(Vector2Int cell)
-        {
-            HighwayLane lane = _map.LaneAt(cell);
-            if (!lane.Active) return Vector2.zero;
-            int mask = _map.Mask(cell);
-            if (Side.Count(mask) != 1) return Vector2.zero;
-            if ((mask & Side.N)  != 0) return Vector2.down;
-            if ((mask & Side.S)  != 0) return Vector2.up;
-            if ((mask & Side.E)  != 0) return Vector2.left;
-            if ((mask & Side.W)  != 0) return Vector2.right;
-            if ((mask & Side.NE) != 0) return new Vector2(-1f, -1f).normalized;
-            if ((mask & Side.SE) != 0) return new Vector2(-1f,  1f).normalized;
-            if ((mask & Side.SW) != 0) return new Vector2( 1f,  1f).normalized;
-            if ((mask & Side.NW) != 0) return new Vector2( 1f, -1f).normalized;
-            return Vector2.zero;
         }
 
         /// <summary>
@@ -373,7 +313,7 @@ namespace CityGame.CellRoads
                 if (!lane.Active) return true;
                 if (lane.OneWay) return _map.CanCross(to, side); // односторонняя поперёк: мост
                 int toMask = _map.Mask(to);
-                if (Side.Count(toMask) == 1) return true; // SetHighwayPath обработает направление
+                if (Side.Count(toMask) == 1) return (toMask & Side.Opposite(side)) == 0; // конец шоссе
                 // Середина шоссе: примыкаем боковым подходом (развилка) или проходим сквозь мостом.
                 return Side.Count(toMask) == 2 && (toMask & (side | Side.Opposite(side))) == 0;
             }
@@ -435,11 +375,8 @@ namespace CityGame.CellRoads
             if (!Closed) TrimDanglingBridge();
             _trimmed = _path.Count < pathBefore;
             // Отпустили палец рядом с началом: замыкаем кольцо сами, не заставляя попадать точно в первую клетку.
-            bool _startIsEnd = !_map.LaneAt(_path[0]).Active ||
-                               (_map.LaneAt(_path[0]).Active && Side.Count(_map.Mask(_path[0])) == 1);
-            bool _endIsEnd   = !_map.LaneAt(_path[_path.Count - 1]).Active ||
-                               (_map.LaneAt(_path[_path.Count - 1]).Active && Side.Count(_map.Mask(_path[_path.Count - 1])) == 1);
-            if (!Closed && _path.Count >= MinRingCells && _startIsEnd && _endIsEnd)
+            if (!Closed && _path.Count >= MinRingCells && !_map.LaneAt(_path[0]).Active &&
+                !_map.LaneAt(_path[_path.Count - 1]).Active)
             {
                 Vector2Int a = _path[_path.Count - 1], b = _path[0];
                 if (Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) == 1) _path.Add(b);
@@ -491,54 +428,12 @@ namespace CityGame.CellRoads
         void UpdatePreview()
         {
             if (_preview == null) return;
+            _preview.positionCount = _path.Count;
+            for (int i = 0; i < _path.Count; i++)
+                _preview.SetPosition(i, new Vector3((_path[i].x + 0.5f) * CellSize,
+                    (_path[i].y + 0.5f) * CellSize, -0.02f));
             _preview.widthMultiplier = CellSize * (OneWayMode ? 0.5f : 0.88f);
-            if (_path.Count < 2) { _preview.enabled = false; return; }
-
-            // Во время рисования — прямая линия от начала до конца пути (без зигзага и безье).
-            // После подтверждения — сглаженный путь по фактическим клеткам.
-            if (_drawing)
-            {
-                Vector2 startW = new Vector2((_startCell.x + 0.5f) * CellSize, (_startCell.y + 0.5f) * CellSize);
-                Vector2Int lastCell = _path[_path.Count - 1];
-                Vector2 endW = new Vector2((lastCell.x + 0.5f) * CellSize, (lastCell.y + 0.5f) * CellSize);
-                _preview.positionCount = 2;
-                _preview.SetPosition(0, new Vector3(startW.x, startW.y, -0.02f));
-                _preview.SetPosition(1, new Vector3(endW.x, endW.y, -0.02f));
-            }
-            else
-            {
-                var smoothed = BuildSmoothedPreview(_path);
-                _preview.positionCount = smoothed.Count;
-                for (int i = 0; i < smoothed.Count; i++)
-                    _preview.SetPosition(i, new Vector3(smoothed[i].x, smoothed[i].y, -0.02f));
-            }
-            _preview.enabled = true;
-        }
-
-        List<Vector2> BuildSmoothedPreview(List<Vector2Int> cells)
-        {
-            float r = CellSize * 0.45f;
-            const int arcSteps = 4;
-            var pts = new List<Vector2>(cells.Count * 2);
-            for (int i = 0; i < cells.Count; i++)
-            {
-                Vector2 p = new Vector2((cells[i].x + 0.5f) * CellSize, (cells[i].y + 0.5f) * CellSize);
-                if (i == 0 || i == cells.Count - 1) { pts.Add(p); continue; }
-                Vector2 prev = new Vector2((cells[i - 1].x + 0.5f) * CellSize, (cells[i - 1].y + 0.5f) * CellSize);
-                Vector2 next = new Vector2((cells[i + 1].x + 0.5f) * CellSize, (cells[i + 1].y + 0.5f) * CellSize);
-                Vector2 d0 = (p - prev).normalized;
-                Vector2 d1 = (next - p).normalized;
-                if (Vector2.Dot(d0, d1) > 0.99f) { pts.Add(p); continue; }
-                Vector2 a = p - d0 * r;
-                Vector2 b = p + d1 * r;
-                for (int j = 0; j <= arcSteps; j++)
-                {
-                    float t = j / (float)arcSteps;
-                    float u = 1f - t;
-                    pts.Add(u * u * a + 2f * u * t * p + t * t * b);
-                }
-            }
-            return pts;
+            _preview.enabled = _path.Count > 1;
         }
     }
 }

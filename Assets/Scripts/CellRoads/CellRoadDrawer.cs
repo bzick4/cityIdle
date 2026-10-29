@@ -18,6 +18,9 @@ namespace CityGame.CellRoads
         public float CellSize = 1f;
         [Range(0.2f, 0.9f)] public float WidthFraction = 0.5f;
 
+        [Tooltip("Насколько дальше в сторону нужно увести палец, чтобы дорога повернула, в клетках")]
+        public int TurnThreshold = 2;
+
         public Func<Vector2, bool> IsPointerBlocked;
 
         /// <summary>Множитель цены клетки дороги (мост на море дороже).</summary>
@@ -73,6 +76,8 @@ namespace CityGame.CellRoads
 
         readonly List<Vector2Int> _path = new List<Vector2Int>();
         bool _drawing;
+        bool _axisKnown;
+        bool _axisHorizontal;
         bool _previewDirty;
 
         GameObject _preview;
@@ -145,6 +150,7 @@ namespace CityGame.CellRoads
                 if (!Allowed(start)) return;
 
                 _drawing = true;
+                _axisKnown = false;
                 _path.Clear();
                 _path.Add(start);
                 _previewDirty = true;
@@ -167,41 +173,62 @@ namespace CityGame.CellRoads
             return new Vector2(p.x, p.y);
         }
 
-        /// <summary>Строит путь от стартовой клетки до цели по доминирующей оси (горизонталь или вертикаль).</summary>
+        /// <summary>Двигает конец дороги к клетке под пальцем, строго по осям.</summary>
         void Follow(Vector2Int target)
         {
-            if (_path.Count == 0) return;
-            Vector2Int start = _path[0];
-            if (target == start)
+            for (int guard = 0; guard < 128; guard++)
             {
-                if (_path.Count > 1) { _path.RemoveRange(1, _path.Count - 1); _previewDirty = true; }
-                return;
-            }
-            var line = new List<Vector2Int> { start };
-            Vector2Int delta = target - start;
-            if (Mathf.Abs(delta.x) >= Mathf.Abs(delta.y))
-            {
-                int sx = delta.x > 0 ? 1 : -1;
-                for (int x = start.x + sx; x != target.x + sx; x += sx)
+                Vector2Int tail = _path[_path.Count - 1];
+                if (tail == target) return;
+
+                // Вернулись назад по нарисованному: лишнее убираем.
+                int idx = _path.IndexOf(target);
+                if (idx >= 0)
                 {
-                    var cell = new Vector2Int(x, start.y);
-                    if (!Allowed(cell)) break;
-                    line.Add(cell);
+                    _path.RemoveRange(idx + 1, _path.Count - idx - 1);
+                    _axisKnown = false;
+                    if (_path.Count >= 2)
+                    {
+                        _axisHorizontal = _path[_path.Count - 1].y == _path[_path.Count - 2].y;
+                        _axisKnown = true;
+                    }
+
+                    _previewDirty = true;
+                    return;
                 }
-            }
-            else
-            {
-                int sy = delta.y > 0 ? 1 : -1;
-                for (int y = start.y + sy; y != target.y + sy; y += sy)
+
+                Vector2Int d = target - tail;
+                if (!_axisKnown)
                 {
-                    var cell = new Vector2Int(start.x, y);
-                    if (!Allowed(cell)) break;
-                    line.Add(cell);
+                    _axisHorizontal = Mathf.Abs(d.x) >= Mathf.Abs(d.y);
+                    _axisKnown = true;
                 }
+
+                int along = _axisHorizontal ? d.x : d.y;
+                int across = _axisHorizontal ? d.y : d.x;
+
+                // Поворот: палец ушёл вбок заметно дальше, чем вперёд (или вперёд уже нечего идти).
+                bool turn = across != 0 && (along == 0 ||
+                                            (Mathf.Abs(across) >= TurnThreshold && Mathf.Abs(across) > Mathf.Abs(along)));
+                if (turn)
+                {
+                    _axisHorizontal = !_axisHorizontal;
+                    along = _axisHorizontal ? d.x : d.y;
+                }
+
+                if (along == 0) return;
+
+                Vector2Int step = _axisHorizontal
+                    ? new Vector2Int(along > 0 ? 1 : -1, 0)
+                    : new Vector2Int(0, along > 0 ? 1 : -1);
+                Vector2Int next = tail + step;
+
+                if (!Allowed(next)) return;
+                if (_path.Contains(next)) return;
+
+                _path.Add(next);
+                _previewDirty = true;
             }
-            _path.Clear();
-            _path.AddRange(line);
-            _previewDirty = true;
         }
 
         /// <summary>Палец отпущен: строить пока не строим, ждём подтверждения.</summary>
@@ -248,34 +275,15 @@ namespace CityGame.CellRoads
         {
             _previewDirty = false;
             ClearPreview();
-            if (_path.Count == 0) return;
 
             Dictionary<Vector2Int, int> masks = CellRoadMap.MasksOf(_path);
-            Mesh mesh = RoadCellMesher.Build(masks, null, null, CellSize, WidthFraction).ToMesh(RoadLayers.Road);
-
             _preview = new GameObject("RoadPreview");
             _preview.transform.SetParent(transform, false);
-            _preview.AddComponent<MeshFilter>().sharedMesh = mesh;
+            _preview.AddComponent<MeshFilter>().sharedMesh =
+                RoadCellMesher.Build(masks, null, null, CellSize, WidthFraction).ToMesh(RoadLayers.Road);
             var r = _preview.AddComponent<MeshRenderer>();
             r.sharedMaterial = _previewMaterial;
             r.sortingOrder = 16;
-        }
-
-        static Mesh BuildStripMesh(Vector2 from, Vector2 to, float hw)
-        {
-            Vector2 d = to - from;
-            if (d.sqrMagnitude < 0.0001f) return new Mesh();
-            d = d.normalized;
-            Vector2 perp = new Vector2(-d.y, d.x);
-            var mesh = new Mesh();
-            mesh.SetVertices(new List<Vector3>
-            {
-                from - perp * hw, from + perp * hw,
-                to   + perp * hw, to   - perp * hw
-            });
-            mesh.SetTriangles(new[] { 0, 1, 2, 0, 2, 3 }, 0);
-            mesh.RecalculateBounds();
-            return mesh;
         }
 
         void ClearPreview()

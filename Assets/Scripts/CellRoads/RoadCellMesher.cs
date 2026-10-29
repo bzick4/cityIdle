@@ -62,29 +62,14 @@ namespace CityGame.CellRoads
         public static RoadLayers Build(IEnumerable<KeyValuePair<Vector2Int, int>> cells,
             Func<Vector2Int, JunctionType> typeOf, Func<Vector2Int, HighwayLane> laneOf, float cellSize,
             float widthFraction)
-            => Build(cells, typeOf, laneOf, cellSize, widthFraction, null);
-
-        public static RoadLayers Build(IEnumerable<KeyValuePair<Vector2Int, int>> cells,
-            Func<Vector2Int, JunctionType> typeOf, Func<Vector2Int, HighwayLane> laneOf, float cellSize,
-            float widthFraction, IReadOnlyList<RoadStroke> strokes)
         {
             var layers = new RoadLayers();
             var entries = new List<KeyValuePair<Vector2Int, int>>();
             foreach (var item in cells) entries.Add(item);
             var allMasks = new Dictionary<Vector2Int, int>();
             foreach (var item in entries) allMasks[item.Key] = item.Value;
-
-            // Внутренние клетки диагональных штрихов пропускаем в основном цикле и рендерим единой лентой.
-            var strokeInterior = new HashSet<Vector2Int>();
-            if (strokes != null)
-                foreach (RoadStroke stroke in strokes)
-                    if (stroke.Interior != null)
-                        foreach (Vector2Int c in stroke.Interior)
-                            if (allMasks.TryGetValue(c, out int m) && Side.Count(m) == 2)
-                                strokeInterior.Add(c);
             foreach (var kv in entries)
             {
-                if (strokeInterior.Contains(kv.Key)) continue;
                 Vector2 c = new Vector2((kv.Key.x + 0.5f) * cellSize, (kv.Key.y + 0.5f) * cellSize);
                 JunctionType type = typeOf != null ? typeOf(kv.Key) : JunctionType.Plain;
                 HighwayLane lane = laneOf != null ? laneOf(kv.Key) : default;
@@ -120,11 +105,6 @@ namespace CityGame.CellRoads
                 }
                 else
                 {
-                    // Прямые диагональные прогоны рендерятся одной лентой в AppendDiagonalStrips.
-                    if (!lane.Active && type == JunctionType.Plain &&
-                        (kv.Value == (Side.NE | Side.SW) || kv.Value == (Side.NW | Side.SE)))
-                        continue;
-
                     bool overpass = Side.Count(kv.Value) == 4 && JunctionSpecs.IsOverpass(type);
                     if (overpass)
                     {
@@ -144,173 +124,14 @@ namespace CityGame.CellRoads
                 }
             }
 
-            AppendDiagonalStrips(layers, allMasks, cellSize, widthFraction, typeOf, laneOf);
-            AppendStrokes(layers, strokes, allMasks, cellSize, widthFraction);
-            if (laneOf != null) AppendStandaloneHighways(layers, entries, laneOf, cellSize, strokes);
+            if (laneOf != null) AppendStandaloneHighways(layers, entries, laneOf, cellSize);
 
             return layers;
         }
 
-        /// <summary>
-        /// Прямые диагональные прогоны (NE+SW или NW+SE) рендерим одной лентой вместо цепочки ромбов.
-        /// Лента тянется от угла первой до угла последней клетки прогона, стыкуясь с рукавами соседних узлов.
-        /// </summary>
-        static void AppendDiagonalStrips(RoadLayers L, Dictionary<Vector2Int, int> allMasks,
-            float cellSize, float widthFraction,
-            Func<Vector2Int, JunctionType> typeOf, Func<Vector2Int, HighwayLane> laneOf)
-        {
-            var visited = new HashSet<Vector2Int>();
-            float hw = cellSize * widthFraction * 0.5f;
-            // half-step along diagonal to reach the cell corner (= junction arm tip)
-            float ext = cellSize * 0.5f * Mathf.Sqrt(2f);
-
-            foreach (var kv in allMasks)
-            {
-                if (visited.Contains(kv.Key)) continue;
-                bool isNeSw = kv.Value == (Side.NE | Side.SW);
-                bool isNwSe = kv.Value == (Side.NW | Side.SE);
-                if (!isNeSw && !isNwSe) continue;
-                if (laneOf != null && laneOf(kv.Key).Active) continue;
-                if (typeOf != null && typeOf(kv.Key) != JunctionType.Plain) continue;
-
-                Vector2Int step = isNeSw ? new Vector2Int(1, 1) : new Vector2Int(-1, 1);
-                int straightMask = kv.Value;
-
-                // Идём назад до начала прогона.
-                Vector2Int start = kv.Key;
-                for (;;)
-                {
-                    Vector2Int prev = start - step;
-                    if (!allMasks.TryGetValue(prev, out int pm) || pm != straightMask) break;
-                    if (laneOf != null && laneOf(prev).Active) break;
-                    if (typeOf != null && typeOf(prev) != JunctionType.Plain) break;
-                    start = prev;
-                }
-
-                // Собираем прогон вперёд.
-                var run = new List<Vector2Int>();
-                for (Vector2Int cur = start;;)
-                {
-                    if (!allMasks.TryGetValue(cur, out int cm) || cm != straightMask) break;
-                    if (laneOf != null && laneOf(cur).Active) break;
-                    if (typeOf != null && typeOf(cur) != JunctionType.Plain) break;
-                    run.Add(cur);
-                    visited.Add(cur);
-                    cur += step;
-                }
-
-                if (run.Count == 0) continue;
-
-                // Центры крайних клеток; расширяем до угла-стыка с соседними рукавами.
-                Vector2 stepF = new Vector2(step.x, step.y);
-                Vector2 dn = stepF.normalized;
-                Vector2 fromC = new Vector2((run[0].x + 0.5f) * cellSize, (run[0].y + 0.5f) * cellSize);
-                Vector2 toC   = new Vector2((run[run.Count - 1].x + 0.5f) * cellSize,
-                                            (run[run.Count - 1].y + 0.5f) * cellSize);
-                Vector2 from = fromC - dn * ext;
-                Vector2 to   = toC   + dn * ext;
-
-                // Полотно дороги.
-                Vector2 perp = new Vector2(-dn.y, dn.x);
-                var v = L.Verts[RoadLayers.Road];
-                var t = L.Tris[RoadLayers.Road];
-                int i0 = v.Count;
-                v.Add(new Vector3(from.x - perp.x * hw, from.y - perp.y * hw));
-                v.Add(new Vector3(from.x + perp.x * hw, from.y + perp.y * hw));
-                v.Add(new Vector3(to.x   + perp.x * hw, to.y   + perp.y * hw));
-                v.Add(new Vector3(to.x   - perp.x * hw, to.y   - perp.y * hw));
-                t.Add(i0); t.Add(i0 + 1); t.Add(i0 + 2);
-                t.Add(i0); t.Add(i0 + 2); t.Add(i0 + 3);
-
-                // Прерывистая осевая (по одному штриху на клетку прогона).
-                float mhw = cellSize * MarkingWidth * 0.5f;
-                var mv = L.Verts[RoadLayers.Marking];
-                var mt = L.Tris[RoadLayers.Marking];
-                foreach (Vector2Int cell in run)
-                {
-                    Vector2 cc = new Vector2((cell.x + 0.5f) * cellSize, (cell.y + 0.5f) * cellSize);
-                    float dashHalf = ext * 0.3f;
-                    Vector2 da = cc - dn * dashHalf;
-                    Vector2 db = cc + dn * dashHalf;
-                    int mi = mv.Count;
-                    mv.Add(new Vector3(da.x - perp.x * mhw, da.y - perp.y * mhw));
-                    mv.Add(new Vector3(da.x + perp.x * mhw, da.y + perp.y * mhw));
-                    mv.Add(new Vector3(db.x + perp.x * mhw, db.y + perp.y * mhw));
-                    mv.Add(new Vector3(db.x - perp.x * mhw, db.y - perp.y * mhw));
-                    mt.Add(mi); mt.Add(mi + 1); mt.Add(mi + 2);
-                    mt.Add(mi); mt.Add(mi + 2); mt.Add(mi + 3);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Сохранённые штрихи рендерим единой прямой лентой — только для не-осевых и не-45° случаев,
-        /// которые клеточный рендерер иначе показал бы зигзагом.
-        /// </summary>
-        static void AppendStrokes(RoadLayers L, IReadOnlyList<RoadStroke> strokes,
-            Dictionary<Vector2Int, int> allMasks, float cellSize, float widthFraction)
-        {
-            if (strokes == null || strokes.Count == 0) return;
-            float hw = cellSize * widthFraction * 0.5f;
-            float mhw = cellSize * MarkingWidth * 0.5f;
-
-            foreach (RoadStroke stroke in strokes)
-            {
-                // Штрихи шоссе/одностороннего рендерятся через AppendStandaloneHighways с правильной шириной.
-                if (stroke.HalfWidthFraction > 0f) continue;
-                float dx = stroke.To.x - stroke.From.x;
-                float dy = stroke.To.y - stroke.From.y;
-                float adx = Mathf.Abs(dx), ady = Mathf.Abs(dy);
-                // Горизонталь, вертикаль и ровно 45° уже обрабатываются без штриховых данных.
-                bool trivial = adx < 0.01f || ady < 0.01f ||
-                               Mathf.Abs(adx - ady) < 0.02f * Mathf.Max(adx, ady);
-                if (trivial) continue;
-
-                Vector2 from = stroke.From;
-                Vector2 to = stroke.To;
-                Vector2 d = to - from;
-                if (d.sqrMagnitude < 0.01f) continue;
-                Vector2 dn = d.normalized;
-                Vector2 perp = new Vector2(-dn.y, dn.x);
-
-                // Полотно.
-                var v = L.Verts[RoadLayers.Road];
-                var t = L.Tris[RoadLayers.Road];
-                int i0 = v.Count;
-                v.Add(new Vector3(from.x - perp.x * hw, from.y - perp.y * hw));
-                v.Add(new Vector3(from.x + perp.x * hw, from.y + perp.y * hw));
-                v.Add(new Vector3(to.x   + perp.x * hw, to.y   + perp.y * hw));
-                v.Add(new Vector3(to.x   - perp.x * hw, to.y   - perp.y * hw));
-                t.Add(i0); t.Add(i0 + 1); t.Add(i0 + 2);
-                t.Add(i0); t.Add(i0 + 2); t.Add(i0 + 3);
-
-                // Пунктирная осевая.
-                float totalLen = d.magnitude;
-                float period = cellSize * 0.7f;
-                int numDashes = Mathf.Max(1, Mathf.RoundToInt(totalLen / period));
-                var mv = L.Verts[RoadLayers.Marking];
-                var mt = L.Tris[RoadLayers.Marking];
-                for (int k = 0; k < numDashes; k++)
-                {
-                    float t0 = (k + 0.15f) / numDashes;
-                    float t1 = (k + 0.85f) / numDashes;
-                    Vector2 da = Vector2.Lerp(from, to, t0);
-                    Vector2 db = Vector2.Lerp(from, to, t1);
-                    int mi = mv.Count;
-                    mv.Add(new Vector3(da.x - perp.x * mhw, da.y - perp.y * mhw));
-                    mv.Add(new Vector3(da.x + perp.x * mhw, da.y + perp.y * mhw));
-                    mv.Add(new Vector3(db.x + perp.x * mhw, db.y + perp.y * mhw));
-                    mv.Add(new Vector3(db.x - perp.x * mhw, db.y - perp.y * mhw));
-                    mt.Add(mi); mt.Add(mi + 1); mt.Add(mi + 2);
-                    mt.Add(mi); mt.Add(mi + 2); mt.Add(mi + 3);
-                }
-            }
-        }
-
         static void AppendStandaloneHighways(RoadLayers layers,
             IEnumerable<KeyValuePair<Vector2Int, int>> cells,
-            Func<Vector2Int, HighwayLane> laneOf, float cellSize,
-            IReadOnlyList<RoadStroke> strokes = null)
+            Func<Vector2Int, HighwayLane> laneOf, float cellSize)
         {
             var all = new List<Vector2Int>();
             var masks = new Dictionary<Vector2Int, int>();
@@ -321,21 +142,11 @@ namespace CityGame.CellRoads
                 if (lane.Active && lane.Standalone) all.Add(item.Key);
             }
 
-            // Строим набор внутренних клеток диагональных штрихов шоссе/односторонних.
-            var highwayStrokeInterior = new HashSet<Vector2Int>();
-            if (strokes != null)
-                foreach (RoadStroke s in strokes)
-                    if (s.HalfWidthFraction > 0f && s.Interior != null)
-                        foreach (Vector2Int c in s.Interior)
-                            highwayStrokeInterior.Add(c);
-
             var visited = new HashSet<Vector2Int>();
             foreach (Vector2Int cell in all)
             {
                 if (visited.Contains(cell) || HasStandalonePredecessor(cell, laneOf, masks)) continue;
-                List<Vector2Int> route = TraceStandaloneRoute(cell, laneOf, masks, visited);
-                route = CollapseIfStroke(route, highwayStrokeInterior);
-                AppendStandaloneRoute(layers, route, laneOf, masks, cellSize);
+                AppendStandaloneRoute(layers, TraceStandaloneRoute(cell, laneOf, masks, visited), laneOf, masks, cellSize);
             }
             // Обрабатываем замкнутые контуры, у которых нет начала.
             foreach (Vector2Int cell in all)
@@ -345,18 +156,6 @@ namespace CityGame.CellRoads
                 CloseLoop(loop, laneOf, masks);
                 AppendStandaloneRoute(layers, loop, laneOf, masks, cellSize);
             }
-        }
-
-        /// <summary>
-        /// Если все промежуточные клетки маршрута покрыты штрихом шоссе, сворачиваем в два конца —
-        /// тогда AppendStandaloneRoute нарисует прямую ленту вместо зигзага по центрам клеток.
-        /// </summary>
-        static List<Vector2Int> CollapseIfStroke(List<Vector2Int> route, HashSet<Vector2Int> highwayStrokeInterior)
-        {
-            if (route == null || route.Count <= 2 || highwayStrokeInterior.Count == 0) return route;
-            for (int i = 1; i < route.Count - 1; i++)
-                if (!highwayStrokeInterior.Contains(route[i])) return route;
-            return new List<Vector2Int> { route[0], route[route.Count - 1] };
         }
 
         /// <summary>
@@ -479,20 +278,6 @@ namespace CityGame.CellRoads
             var points = new List<Vector2>(route.Count);
             for (int i = 0; i < route.Count; i++)
                 points.Add(new Vector2((route[i].x + 0.5f) * cellSize, (route[i].y + 0.5f) * cellSize));
-
-            // Bresenham-диагональ: шаги меняют направление (чередуются E и NE и т.п.) — рисуем прямую ленту.
-            if (route.Count >= 3)
-            {
-                int s0 = Side.FromDelta(route[1] - route[0]);
-                for (int k = 2; k < route.Count; k++)
-                {
-                    if (Side.FromDelta(route[k] - route[k - 1]) != s0)
-                    {
-                        while (points.Count > 2) points.RemoveAt(1);
-                        break;
-                    }
-                }
-            }
 
             var curve = new List<Vector2>();
             var curveCells = new List<int>();
@@ -933,15 +718,7 @@ namespace CityGame.CellRoads
                 return;
             }
 
-            if (count == 2)
-            {
-                // Прямые проходы (N+S, E+W, NE+SW, NW+SE): рукава перекрывают центр — диск не нужен.
-                // Тупой угол (например, N+NE): треугольный зазор — заполняем диском.
-                bool straight = mask == (Side.N | Side.S) || mask == (Side.E | Side.W)
-                             || mask == (Side.NE | Side.SW) || mask == (Side.NW | Side.SE);
-                if (!straight) AddDisc(v, t, c, hw);
-                return;
-            }
+            if (count < 3) return;
 
             if (type == JunctionType.Roundabout)
             {
@@ -966,12 +743,9 @@ namespace CityGame.CellRoads
         static void AddDash(List<Vector3> v, List<int> t, Vector2 c, int side, float h, float lineWidth)
         {
             Vector2 d = Side.Vec(side);
-            float mag = d.magnitude;
-            Vector2 dn = mag > 0f ? d / mag : Vector2.zero;
-            Vector2 p = new Vector2(-dn.y, dn.x) * (lineWidth * 0.5f);
-            float len = h * mag;
-            Vector2 a = c + dn * (len * 0.2f);
-            Vector2 b = c + dn * (len * 0.8f);
+            Vector2 p = new Vector2(-d.y, d.x) * (lineWidth * 0.5f);
+            Vector2 a = c + d * (h * 0.2f);
+            Vector2 b = c + d * (h * 0.8f);
             AddQuad(v, t, a - p, a + p, b + p, b - p);
         }
 
@@ -1004,13 +778,11 @@ namespace CityGame.CellRoads
         static void AddArm(List<Vector3> v, List<int> t, Vector2 c, int side, float h, float hw)
         {
             Vector2 d = Side.Vec(side);
-            float mag = d.magnitude;
-            Vector2 dn = mag > 0f ? d / mag : Vector2.zero;
-            Vector2 p = new Vector2(-dn.y, dn.x); // нормализованный поперёк
-            float len = h * mag;                   // h*√2 для диагоналей, h для кардинальных
+            Vector2 p = new Vector2(-d.y, d.x); // поперёк рукава
             Vector2 a = c - p * hw;
             Vector2 b = c + p * hw;
-            AddQuad(v, t, a, b, b + dn * len, a + dn * len);
+            Vector2 e = d * h;
+            AddQuad(v, t, a, b, b + e, a + e);
         }
 
         /// <summary>
