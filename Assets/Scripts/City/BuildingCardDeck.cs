@@ -95,7 +95,7 @@ namespace CityGame.City
         //  Определения карточек
         // ──────────────────────────────────────────────────────────
 
-        enum CatAction { ShowRoads, ShowDistricts, ShowServices, ShowEnergy, Erase }
+        enum CatAction { ShowRoads, ShowDistricts, ShowServices, ShowEnergy, ShowInfra, Erase }
 
         struct CatDef  { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon; public CatAction Action; }
         struct ToolDef { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon; public Tool     Tool;    }
@@ -103,7 +103,7 @@ namespace CityGame.City
                          public BuildingCategory Category; public ServiceKind Kind; public Tool PlaceTool; }
 
         CatDef[]  _catDefs;
-        ToolDef[] _roadDefs;
+        ToolDef[] _roadDefs, _infraDefs;
         BldDef[]  _distDefs, _servDefs, _enrgDefs;
 
         void InitDefs()
@@ -114,6 +114,7 @@ namespace CityGame.City
                 new CatDef { Title="РАЙОНЫ",  Sub="здания",  ArtBg=ART_DIST,  Icon=TexTool(Tool.Residential), Action=CatAction.ShowDistricts },
                 new CatDef { Title="СЛУЖБЫ",  Sub="сервисы", ArtBg=ART_SERV,  Icon=TexTool(Tool.Service),     Action=CatAction.ShowServices  },
                 new CatDef { Title="ЭНЕРГИЯ", Sub="питание", ArtBg=ART_ENRG,  Icon=TexService(ServiceKind.PowerPlant), Action=CatAction.ShowEnergy },
+                new CatDef { Title="ИНФРА",   Sub="сектора", ArtBg=ART_DIST,  Icon=TexTool(Tool.Expand),      Action=CatAction.ShowInfra     },
                 new CatDef { Title="СНЕСТИ",  Sub="убрать",  ArtBg=ART_ERASE, Icon=TexTool(Tool.Erase),       Action=CatAction.Erase         },
             };
             _roadDefs = new[]
@@ -154,6 +155,12 @@ namespace CityGame.City
                 new BldDef { Title="Водобашня", Sub="вода", ArtBg=ART_ENRG,
                              Icon=TexService(ServiceKind.WaterTower),
                              Category=BuildingCategory.Service, Kind=ServiceKind.WaterTower, PlaceTool=Tool.Service },
+            };
+            _infraDefs = new[]
+            {
+                new ToolDef { Title="Расшир.", Sub="сектор", ArtBg=ART_DIST,  Icon=TexTool(Tool.Expand), Tool=Tool.Expand },
+                new ToolDef { Title="Порт",    Sub="море",   ArtBg=ART_DIST,  Icon=TexTool(Tool.Port),   Tool=Tool.Port   },
+                new ToolDef { Title="Автобус", Sub="маршр.", ArtBg=ART_ENRG,  Icon=TexTool(Tool.Bus),    Tool=Tool.Bus    },
             };
         }
 
@@ -370,13 +377,16 @@ namespace CityGame.City
             artRt.offsetMin=new Vector2(2,0); artRt.offsetMax=new Vector2(-2,-2);
             art.AddComponent<Image>().color = artBg;
 
-            // Иконка-текстура (RawImage, занимает большую часть арт-панели)
+            // Иконка-текстура (квадратная, вписанная в арт-панель)
             if (iconTex != null)
             {
                 var ic = new GameObject("Ico"); ic.transform.SetParent(art.transform, false);
                 var icRt = ic.AddComponent<RectTransform>();
-                icRt.anchorMin=new Vector2(0.08f,0.32f); icRt.anchorMax=new Vector2(0.92f,0.98f);
-                icRt.offsetMin=Vector2.zero; icRt.offsetMax=Vector2.zero;
+                // Центрируем и оставляем небольшой отступ
+                icRt.anchorMin=new Vector2(0.5f,0.5f); icRt.anchorMax=new Vector2(0.5f,0.5f);
+                icRt.pivot=new Vector2(0.5f,0.5f);
+                icRt.anchoredPosition=new Vector2(0, 4f); // чуть выше центра арт-панели
+                icRt.sizeDelta=new Vector2(CardW * 0.72f, CardW * 0.72f); // квадрат
                 var raw = ic.AddComponent<RawImage>();
                 raw.texture = iconTex;
                 raw.raycastTarget = false;
@@ -549,6 +559,7 @@ namespace CityGame.City
                     case CatAction.ShowDistricts:  ShowBuildings(_distDefs); break;
                     case CatAction.ShowServices:   ShowBuildings(_servDefs); break;
                     case CatAction.ShowEnergy:     ShowBuildings(_enrgDefs); break;
+                    case CatAction.ShowInfra:      ShowTools(_infraDefs);    break;
                     case CatAction.Erase:
                         HideAll(); ToolRequested?.Invoke(Tool.Erase); break;
                 }
