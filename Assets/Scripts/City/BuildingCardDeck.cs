@@ -24,6 +24,7 @@ namespace CityGame.City
 
         readonly List<CardSlot> _slots = new List<CardSlot>();
         CardSlot _held;         // карта под пальцем
+        bool _wantVisible;      // запрошена видимость из CitySystem
         bool _draggingToMap;    // фаза «тащим на карту»
         Vector2 _dragStart;
         int _fingerId = -1;
@@ -110,7 +111,14 @@ namespace CityGame.City
 
         public void SetVisible(bool v)
         {
-            if (_canvas != null) _canvas.gameObject.SetActive(v);
+            _wantVisible = v;
+            RefreshVisible();
+        }
+
+        void RefreshVisible()
+        {
+            bool hudOpen = _hud != null && _hud.ToolsOpen;
+            if (_canvas != null) _canvas.gameObject.SetActive(_wantVisible && !hudOpen);
         }
 
         // -------- построение UI --------
@@ -289,6 +297,10 @@ namespace CityGame.City
         void Update()
         {
             if (_canvas == null || !_canvas.gameObject.activeSelf) return;
+
+            // Скрываем когда открыто IMGUI-меню инструментов
+            RefreshVisible();
+            if (!_canvas.gameObject.activeSelf) return;
 
             // Поднимаем колоду выше IMGUI-панели
             UpdateDeckPosition();

@@ -27,7 +27,7 @@ namespace CityGame.Buildings
         public Color PanelColor = new Color32(0xE4, 0xE4, 0xE4, 0xF2);
 
         enum Popup { None, Tools, Info }
-        enum ToolPage { Home, Districts, Roads, Services, Utilities }
+        enum ToolPage { Home, Roads, Infra }
 
         CitySystem _city;
         Popup _popup = Popup.None;
@@ -80,7 +80,7 @@ namespace CityGame.Buildings
                 return (hImgui - r.y) * s;
             }
         }
-        /// <summary>Home, Districts, Roads или Services.</summary>
+        /// <summary>Home, Roads или Infra.</summary>
         public string ToolsPage => _toolPage.ToString();
 
         /// <summary>Закрыть все панели (и сбросить инструмент на «Руку»).</summary>
@@ -551,13 +551,14 @@ namespace CityGame.Buildings
             if (next == Popup.Tools) _toolPage = ToolPage.Home;
         }
 
-        /// <summary>Модальное меню с категориями и отдельными страницами инструментов.</summary>
+        /// <summary>
+        /// Меню дорог и инфраструктуры. Районы/службы/энергия убраны — они в BuildingCardDeck.
+        /// </summary>
         float DrawTools(float w, float top)
         {
             _junctionRect = _highwayRect = Rect.zero;
             bool home = _toolPage == ToolPage.Home;
-            float panelHeight = home ? 142f :
-                _toolPage == ToolPage.Services || _toolPage == ToolPage.Utilities ? 148f : 218f;
+            float panelHeight = home ? 142f : 218f;
             Rect panel = new Rect(8f, Mathf.Max(8f, top - panelHeight), w - 16f, panelHeight);
             _popupRect = panel;
             Draw(panel, _panel, PanelColor);
@@ -571,41 +572,28 @@ namespace CityGame.Buildings
                 else _toolPage = ToolPage.Home;
             }
 
-            string title = home ? "СТРОИТЕЛЬСТВО" :
-                _toolPage == ToolPage.Districts ? "РАЙОНЫ" :
-                _toolPage == ToolPage.Roads ? "ДОРОГИ" :
-                _toolPage == ToolPage.Utilities ? "ЭНЕРГИЯ И ВОДА" : "СЛУЖБЫ";
+            string title = home ? "ИНФРАСТРУКТУРА" :
+                _toolPage == ToolPage.Infra ? "ИНФРА" : "ДОРОГИ";
             GUI.Label(new Rect(panel.x + 98f, panel.y + 8f, panel.width - 108f, 30f), title, _lblMenuTitle);
 
             if (home)
             {
                 float gap = 6f;
-                float cardW = (panel.width - 24f - gap * 4f) / 5f;
+                float cardW = (panel.width - 24f - gap * 2f) / 3f;
                 float cardH = 84f;
                 float x = panel.x + 8f;
                 float y = panel.y + 44f;
-                DrawCategoryCard(new Rect(x, y, cardW, cardH), "РАЙОНЫ", _icons[(int)Tool.Residential - 1],
-                    ToolPage.Districts, new Color32(0xE7, 0xF0, 0xE4, 0xFF));
-                DrawCategoryCard(new Rect(x + cardW + gap, y, cardW, cardH), "ДОРОГИ", _icons[(int)Tool.Road - 1],
+                DrawCategoryCard(new Rect(x, y, cardW, cardH), "ДОРОГИ", _icons[(int)Tool.Road - 1],
                     ToolPage.Roads, new Color32(0xE6, 0xE9, 0xEC, 0xFF));
-                DrawCategoryCard(new Rect(x + (cardW + gap) * 2f, y, cardW, cardH), "СЛУЖБЫ", _icons[(int)Tool.Service - 1],
-                    ToolPage.Services, new Color32(0xF8, 0xE9, 0xE8, 0xFF));
-                DrawCategoryCard(new Rect(x + (cardW + gap) * 3f, y, cardW, cardH), "ЭНЕРГИЯ", _serviceIcons[(int)ServiceKind.PowerPlant],
-                    ToolPage.Utilities, new Color32(0xFB, 0xF2, 0xD8, 0xFF));
-                // «Снести» не категория, а режим: нажатие сразу включает инструмент.
-                DrawEraseCard(new Rect(x + (cardW + gap) * 4f, y, cardW, cardH));
+                DrawCategoryCard(new Rect(x + cardW + gap, y, cardW, cardH), "ИНФРА", _icons[(int)Tool.Port - 1],
+                    ToolPage.Infra, new Color32(0xE3, 0xEE, 0xF7, 0xFF));
+                DrawEraseCard(new Rect(x + (cardW + gap) * 2f, y, cardW, cardH));
                 return panel.y - 6f;
             }
 
-            if (_toolPage == ToolPage.Services || _toolPage == ToolPage.Utilities)
-            {
-                DrawServicePage(panel, _toolPage == ToolPage.Utilities);
-                return panel.y - 6f;
-            }
-
-            Tool[] tools = _toolPage == ToolPage.Roads
-                ? new[] { Tool.Road, Tool.Highway, Tool.OneWay, Tool.Junction, Tool.Canal, Tool.Ramp }
-                : new[] { Tool.Residential, Tool.Commercial, Tool.Industrial, Tool.Expand, Tool.Port, Tool.Bus };
+            Tool[] tools = _toolPage == ToolPage.Infra
+                ? new[] { Tool.Expand, Tool.Port, Tool.Bus }
+                : new[] { Tool.Road, Tool.Highway, Tool.OneWay, Tool.Junction, Tool.Canal, Tool.Ramp };
             DrawToolPage(panel, tools);
             return panel.y - 6f;
         }
