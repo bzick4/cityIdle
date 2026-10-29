@@ -654,8 +654,8 @@ namespace CityGame.CellRoads
         }
 
         /// <summary>
-        /// Клетка съезда/въезда: трапеция, сужающаяся от ширины шоссе (у шоссе) до ширины улицы (у улицы).
-        /// Направление lane.Heading — от въезда к выезду.
+        /// Клетка съезда/въезда: одна полоса шоссе — ширина совпадает со standalone-шоссе,
+        /// поэтому рамп-ячейки визуально сливаются с ними без скачков.
         /// </summary>
         static void AppendRampCell(RoadLayers L, Vector2 c, Vector2Int key, HighwayLane lane,
             float cell, float streetFraction, Func<Vector2Int, HighwayLane> laneOf)
@@ -663,39 +663,17 @@ namespace CityGame.CellRoads
             Vector2 along = Side.Vec(lane.Heading);
             Vector2 across = new Vector2(-along.y, along.x);
             float h = cell * 0.5f;
-            float streetHw = cell * streetFraction * 0.5f;
-            float highwayHw = cell * HighwayHalfWidth;
+            float hw = cell * HighwayHalfWidth; // одна полоса шоссе
 
-            // Определяем, какой конец клетки примыкает к шоссе (широкий).
-            float hw0 = streetHw; // тыл (против heading)
-            float hw1 = streetHw; // перёд (по heading)
-            if (laneOf != null)
-            {
-                HighwayLane inLane  = laneOf(key - Side.Vec(lane.Heading));
-                HighwayLane outLane = laneOf(key + Side.Vec(lane.Heading));
-                if (inLane.Active  && inLane.Manual  && !inLane.OneWay)  hw0 = highwayHw;
-                if (outLane.Active && outLane.Manual && !outLane.OneWay) hw1 = highwayHw;
-            }
+            AddFrameRect(L.Verts[RoadLayers.Road], L.Tris[RoadLayers.Road], c, along, across, -h, h, -hw, hw);
 
-            Vector2 back  = c - along * h;
-            Vector2 front = c + along * h;
-            // Полотно
-            AddQuad(L.Verts[RoadLayers.Road], L.Tris[RoadLayers.Road],
-                back  - across * hw0, back  + across * hw0,
-                front + across * hw1, front - across * hw1);
-
-            // Кромки: белые линии по обеим сторонам трапеции
+            // Кромки по обеим сторонам
             float ew = cell * 0.025f;
-            // правая кромка
-            AddQuad(L.Verts[RoadLayers.Marking], L.Tris[RoadLayers.Marking],
-                back  + across * (hw0 - ew * 0.5f), back  + across * (hw0 + ew * 0.5f),
-                front + across * (hw1 + ew * 0.5f), front + across * (hw1 - ew * 0.5f));
-            // левая кромка
-            AddQuad(L.Verts[RoadLayers.Marking], L.Tris[RoadLayers.Marking],
-                back  - across * (hw0 + ew * 0.5f), back  - across * (hw0 - ew * 0.5f),
-                front - across * (hw1 - ew * 0.5f), front - across * (hw1 + ew * 0.5f));
+            AddFrameRect(L.Verts[RoadLayers.Marking], L.Tris[RoadLayers.Marking], c, along, across, -h, h,
+                 hw - ew * 1.5f,  hw + ew * 0.5f);
+            AddFrameRect(L.Verts[RoadLayers.Marking], L.Tris[RoadLayers.Marking], c, along, across, -h, h,
+                -hw - ew * 0.5f, -hw + ew * 1.5f);
 
-            // Стрелка направления
             AppendRampArrow(L, c, lane, cell);
         }
 
