@@ -158,6 +158,14 @@ namespace CityGame.Buildings
         }
 
         /// <summary>Мэр-наставник: лаконичный портрет в той же круглой плашке, что значки служб.</summary>
+        public static Texture2D MakeBack()
+        {
+            var px = new Color[N * N];
+            Fill(px, Seg(42, 16, 18, 32, 8), Slate);
+            Fill(px, Seg(18, 32, 42, 48, 8), Slate);
+            return Texture(px, "BackIcon");
+        }
+
         public static Texture2D MakeMayor()
         {
             var px = new Color[N * N];

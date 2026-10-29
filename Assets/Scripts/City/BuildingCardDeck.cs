@@ -62,6 +62,11 @@ namespace CityGame.City
             if (!_texCache.TryGetValue(key, out var tex)) { tex = ToolIcons.MakeService(k); _texCache[key] = tex; }
             return tex;
         }
+        static Texture2D TexBack()
+        {
+            if (!_texCache.TryGetValue("Back", out var tex)) { tex = ToolIcons.MakeBack(); _texCache["Back"] = tex; }
+            return tex;
+        }
 
         // ──────────────────────────────────────────────────────────
         //  Tap state
@@ -284,7 +289,7 @@ namespace CityGame.City
                 if (i == 0)
                 {
                     var back = new CardSlot { IsBackCard = true };
-                    back.Rt = CreateCard("<", "назад", ART_BACK, null);
+                    back.Rt = CreateCard("", "назад", ART_BACK, TexBack());
                     return back;
                 }
                 var d = defs[i - 1];
@@ -306,7 +311,7 @@ namespace CityGame.City
                 if (i == 0)
                 {
                     var back = new CardSlot { IsBackCard = true };
-                    back.Rt = CreateCard("<", "назад", ART_BACK, null);
+                    back.Rt = CreateCard("", "назад", ART_BACK, TexBack());
                     return back;
                 }
                 var d = defs[i - 1];
