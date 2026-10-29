@@ -16,9 +16,9 @@ namespace CityGame.CellRoads
         Material _markMat;
 
         const float HalfWidth = 0.25f;
-        const float EdgeLine = 0.025f;
-        const int SortRoad = 3;
-        const int SortMark = 4;
+        // Road body = 0, road marking = 2. Рамп ниже дорог: в зонах перекрытия дорога рисуется поверх.
+        const int SortBody = -1;
+        const int SortArrow = 1;
 
         public void Bind(RampMap map)
         {
@@ -70,20 +70,13 @@ namespace CityGame.CellRoads
             Vector2 perp = new Vector2(-along.y, along.x);
             float hw = cs * HalfWidth;
 
-            // Тело дороги
+            // Тело: ниже дорог, скрывается под ними в зоне перекрытия
             Mesh road = BuildQuad(p0, p1, along, perp, hw);
-            _views.Add(CreateView("Ramp_body", road, _roadMat, SortRoad));
+            _views.Add(CreateView("Ramp_body", road, _roadMat, SortBody));
 
-            // Боковые полосы разметки
-            float ew = cs * EdgeLine;
-            Mesh edgeL = BuildEdgeLine(p0, p1, along, perp, hw - ew * 1.5f, hw + ew * 0.5f);
-            Mesh edgeR = BuildEdgeLine(p0, p1, along, perp, -(hw + ew * 0.5f), -(hw - ew * 1.5f));
-            _views.Add(CreateView("Ramp_edgeL", edgeL, _markMat, SortMark));
-            _views.Add(CreateView("Ramp_edgeR", edgeR, _markMat, SortMark));
-
-            // Стрелка направления в центре
+            // Стрелка: между телом и разметкой дорог (1 < road marking 2), видна в зазоре
             Mesh arrow = BuildArrow(p0, p1, along, perp, cs);
-            _views.Add(CreateView("Ramp_arrow", arrow, _markMat, SortMark));
+            _views.Add(CreateView("Ramp_arrow", arrow, _markMat, SortArrow));
         }
 
         // Прямоугольник по оси along, ширина 2*hw
@@ -93,16 +86,6 @@ namespace CityGame.CellRoads
             {
                 p0 - perp * hw, p0 + perp * hw,
                 p1 + perp * hw, p1 - perp * hw
-            };
-            return MakeMesh(v, new int[] { 0, 1, 2, 0, 2, 3 });
-        }
-
-        static Mesh BuildEdgeLine(Vector2 p0, Vector2 p1, Vector2 along, Vector2 perp, float inner, float outer)
-        {
-            var v = new Vector3[]
-            {
-                p0 + perp * inner, p0 + perp * outer,
-                p1 + perp * outer, p1 + perp * inner
             };
             return MakeMesh(v, new int[] { 0, 1, 2, 0, 2, 3 });
         }
