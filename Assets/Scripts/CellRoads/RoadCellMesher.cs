@@ -663,7 +663,7 @@ namespace CityGame.CellRoads
             Vector2 along = Side.Vec(lane.Heading);
             Vector2 across = new Vector2(-along.y, along.x);
             float h = cell * 0.5f;
-            float hw = cell * HighwayHalfWidth; // одна полоса шоссе
+            float hw = cell * streetFraction * 0.5f; // как обычная улица
 
             AddFrameRect(L.Verts[RoadLayers.Road], L.Tris[RoadLayers.Road], c, along, across, -h, h, -hw, hw);
 

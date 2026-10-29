@@ -15,7 +15,7 @@ namespace CityGame.CellRoads
         Material _roadMat;
         Material _markMat;
 
-        const float HalfWidth = 0.44f;
+        const float HalfWidth = 0.25f;
         const float EdgeLine = 0.025f;
         const int SortRoad = 3;
         const int SortMark = 4;
@@ -61,8 +61,8 @@ namespace CityGame.CellRoads
         void BuildConnector(RampConnector r)
         {
             float cs = CellSize;
-            Vector2 p0 = RampMap.EdgePoint(r.FromCell, r.ToCell, cs);
-            Vector2 p1 = RampMap.EdgePoint(r.ToCell, r.FromCell, cs);
+            Vector2 p0 = RampMap.CellCenter(r.FromCell, cs);
+            Vector2 p1 = RampMap.CellCenter(r.ToCell, cs);
             Vector2 along = (p1 - p0);
             float len = along.magnitude;
             if (len < 0.01f) return;
