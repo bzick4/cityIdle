@@ -15,13 +15,16 @@ namespace CityGame.CellRoads
         readonly CellRoadMap _map;
         readonly RoadGraph _graph;
         readonly float _cell;
+        readonly RampMap _ramps;
 
-        public CellRoadGraphSync(CellRoadMap map, RoadGraph graph, float cellSize)
+        public CellRoadGraphSync(CellRoadMap map, RoadGraph graph, float cellSize, RampMap ramps = null)
         {
             _map = map;
             _graph = graph;
             _cell = cellSize;
+            _ramps = ramps;
             _map.Changed += Rebuild;
+            if (_ramps != null) _ramps.Changed += Rebuild;
             Rebuild();
         }
 
@@ -58,6 +61,40 @@ namespace CityGame.CellRoads
                     if ((_map.Mask(cell) & side) != 0 && !visited.Contains((cell, side))) any = true;
                 if (any) TraceAllFrom(cell, nodes, visited);
             }
+
+            if (_ramps != null)
+                foreach (RampConnector r in _ramps.All)
+                    AddRampEdge(r, nodes);
+        }
+
+        void AddRampEdge(RampConnector r, Dictionary<Vector2Int, RoadNode> nodes)
+        {
+            RoadNode from = GetOrAttachNode(r.FromCell, nodes);
+            RoadNode to   = GetOrAttachNode(r.ToCell,   nodes);
+            if (from == null || to == null || from.Id == to.Id) return;
+            var pts = new List<Vector2> { from.Position, to.Position };
+            RoadEdge edge = _graph.AddEdge(from, to, pts, RoadType.Local);
+            if (edge != null) edge.OneWay = 1;
+        }
+
+        RoadNode GetOrAttachNode(Vector2Int cell, Dictionary<Vector2Int, RoadNode> nodes)
+        {
+            if (nodes.TryGetValue(cell, out RoadNode n)) return n;
+
+            Vector2 pos = Center(cell);
+            n = _graph.FindNodeNear(pos, _cell * 0.45f, RoadLayer.Ground);
+            if (n != null) return n;
+
+            if (_graph.FindEdgeNear(pos, _cell * 0.45f, RoadLayer.Ground,
+                    out RoadEdge edge, out int seg, out Vector2 closest))
+            {
+                n = _graph.SplitEdge(edge, seg, closest);
+                if (n != null) { nodes[cell] = n; return n; }
+            }
+
+            n = _graph.AddNode(pos, RoadLayer.Ground);
+            nodes[cell] = n;
+            return n;
         }
 
         /// <summary>Эстакада это не узел: дороги проходят её насквозь и не соединяются.</summary>

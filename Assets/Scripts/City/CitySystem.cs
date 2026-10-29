@@ -27,7 +27,8 @@ namespace CityGame.Buildings
         Expand,
         Canal,
         Port,
-        Bus
+        Bus,
+        Ramp
     }
 
     /// <summary>
@@ -69,8 +70,10 @@ namespace CityGame.Buildings
         public BusStationPlacer BusTool { get; private set; }
         public BusSystem Buses { get; private set; }
         public CanalDrawer CanalTool { get; private set; }
+        public RampTool RampingTool { get; private set; }
+        public RampMap Ramps { get; private set; }
 
-        /// <summary>Штрих выбранного инструмента (дорога, шоссе, односторонняя, канал) или null.</summary>
+        /// <summary>Штрих выбранного инструмента (дорога, шоссе, односторонняя, канал, съезд) или null.</summary>
         public IRoadStroke ActiveStroke
         {
             get
@@ -81,6 +84,7 @@ namespace CityGame.Buildings
                     case Tool.Highway:
                     case Tool.OneWay: return HighwayTool;
                     case Tool.Canal: return CanalTool;
+                    case Tool.Ramp: return RampingTool;
                     default: return null;
                 }
             }
@@ -313,7 +317,8 @@ namespace CityGame.Buildings
             _roads = GetComponent<RoadSystem>();
             RoadMap = new CellRoadMap();
             RoadNetwork = new RoadGraph();
-            _graphSync = new CellRoadGraphSync(RoadMap, RoadNetwork, CellSize);
+            Ramps = new RampMap();
+            _graphSync = new CellRoadGraphSync(RoadMap, RoadNetwork, CellSize, Ramps);
 
             Model = new CityModel();
 
@@ -410,7 +415,15 @@ namespace CityGame.Buildings
             JunctionTool = GetOrAdd<JunctionTapper>();
             JunctionTool.CellSize = CellSize;
             JunctionTool.Bind(RoadMap, Economy);
-            GetOrAdd<RoadDrawFx>().Bind(CellSize, RoadDrawer, HighwayTool, FreeRoadDrawer, CanalTool);
+            RampingTool = GetOrAdd<RampTool>();
+            RampingTool.CellSize = CellSize;
+            RampingTool.Bind(Ramps, Economy);
+            RampingTool.enabled = false;
+            var rampRenderer = GetOrAdd<RampRenderer>();
+            rampRenderer.CellSize = CellSize;
+            rampRenderer.Bind(Ramps);
+
+            GetOrAdd<RoadDrawFx>().Bind(CellSize, RoadDrawer, HighwayTool, FreeRoadDrawer, CanalTool, RampingTool);
             var tunnels = GetOrAdd<TunnelRenderer>();
             tunnels.CellSize = CellSize;
             tunnels.Bind(RoadMap, Biomes);
@@ -457,6 +470,7 @@ namespace CityGame.Buildings
             FreeRoadDrawer.IsPointerBlocked = _hud.IsPointerBlocked;
             RoadDrawer.IsPointerBlocked = _hud.IsPointerBlocked;
             HighwayTool.IsPointerBlocked = _hud.IsPointerBlocked;
+            RampingTool.IsPointerBlocked = _hud.IsPointerBlocked;
             Placer.IsPointerBlocked = _hud.IsPointerBlocked;
             JunctionTool.IsPointerBlocked = _hud.IsPointerBlocked;
             Tapper.IsPointerBlocked = _hud.IsPointerBlocked;
@@ -504,6 +518,7 @@ namespace CityGame.Buildings
             CanalTool.enabled = tool == Tool.Canal;
             PortTool.enabled = tool == Tool.Port;
             BusTool.enabled = tool == Tool.Bus;
+            RampingTool.enabled = tool == Tool.Ramp;
             Rig.PanEnabled = tool == Tool.Pan;
 
             ServiceZones.Emphasis = tool == Tool.Service;

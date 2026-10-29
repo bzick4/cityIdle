@@ -132,6 +132,13 @@ namespace CityGame.Buildings
                     break;
                 }
 
+                case Tool.Ramp:
+                    // Диагональная лента: толстая полоса + стрелка
+                    Fill(px, Seg(10, 10, 54, 54, 10), Slate);
+                    Fill(px, Tri(54, 40, 54, 54, 40, 54), Yellow);
+                    Fill(px, Tri(36, 52, 28, 44, 44, 44), White);
+                    break;
+
                 case Tool.Expand:
                     Fill(px, Hex(32, 32, 29), new Color32(0x8F, 0xE0, 0xCE, 0xFF));
                     Fill(px, Box(28, 16, 36, 48), new Color32(0x2E, 0x8B, 0x77, 0xFF));

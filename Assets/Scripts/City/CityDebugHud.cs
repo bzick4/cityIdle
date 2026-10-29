@@ -167,7 +167,7 @@ namespace CityGame.Buildings
 
         static readonly string[] Names =
         {
-            "нет", "Дорога", "Шоссе", "Одностор.", "Развилка", "Жильё", "Торговля", "Промышл.", "Служба", "Снести", "Расширить", "Канал", "Порт", "Автобус"
+            "нет", "Дорога", "Шоссе", "Одностор.", "Развилка", "Жильё", "Торговля", "Промышл.", "Служба", "Снести", "Расширить", "Канал", "Порт", "Автобус", "Съезд"
         };
 
         string LabelFor(Tool tool)
@@ -180,6 +180,7 @@ namespace CityGame.Buildings
                 case Tool.OneWay: return name + "\n" + _city.Economy.RoadCostPerCell + "/кл";
                 case Tool.Junction: return name + "\n" + _city.Economy.RoundaboutCost + "/" +
                                            _city.Economy.HighwayRoundaboutCost + "/" + _city.Economy.OverpassCost;
+                case Tool.Ramp: return name + "\n" + _city.Economy.RoadCostPerCell + "/кл";
                 case Tool.Canal: return name + "\n" + _city.Economy.CanalCostPerCell + "/кл";
                 case Tool.Port: return name + "\n" + _city.Economy.PortCost;
                 case Tool.Bus: return name + "\n" + _city.Economy.BusStationCost;
@@ -586,7 +587,7 @@ namespace CityGame.Buildings
             }
 
             Tool[] tools = _toolPage == ToolPage.Roads
-                ? new[] { Tool.Road, Tool.Highway, Tool.OneWay, Tool.Junction, Tool.Canal }
+                ? new[] { Tool.Road, Tool.Highway, Tool.OneWay, Tool.Junction, Tool.Canal, Tool.Ramp }
                 : new[] { Tool.Residential, Tool.Commercial, Tool.Industrial, Tool.Expand, Tool.Port, Tool.Bus };
             DrawToolPage(panel, tools);
             return panel.y - 6f;
