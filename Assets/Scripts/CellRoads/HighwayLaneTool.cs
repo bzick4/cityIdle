@@ -215,28 +215,30 @@ namespace CityGame.CellRoads
 
         bool Closed => _path.Count > 2 && _path[0] == _path[_path.Count - 1];
 
-        /// <summary>Пересчитывает путь как кубический безье от начала к точке под пальцем (экранные координаты).</summary>
+        /// <summary>Пересчитывает путь от начальной клетки до точки под пальцем по алгоритму Брезенхема.</summary>
         void SetEnd(Vector2 screen)
         {
             Vector3 wp = Cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -Cam.transform.position.z));
             Vector2 world = new Vector2(wp.x, wp.y);
             Vector2 startWorld = new Vector2((_startCell.x + 0.5f) * CellSize, (_startCell.y + 0.5f) * CellSize);
 
-            // Сохраняем параметры кривой для плавного превью.
             StoreBezPreview(startWorld, _startTangent, world);
 
-            var cells = RasterizeBezier(startWorld, _startTangent, world);
+            Vector2Int endCell = ToCell(screen);
+            var line = new List<Vector2Int>();
+            CellRoadMap.BresenhamLine(_startCell, endCell, line);
+
             _path.Clear();
             _path.Add(_startCell);
             var seen = new HashSet<Vector2Int> { _startCell };
 
-            for (int i = 1; i < cells.Count; i++)
+            for (int i = 1; i < line.Count; i++)
             {
                 Vector2Int from = _path[_path.Count - 1];
-                Vector2Int to = cells[i];
+                Vector2Int to = line[i];
                 if (from == to) continue;
 
-                // Замыкание кольца: безье дошёл обратно к началу
+                // Замыкание кольца: Брезенхем дошёл обратно к началу.
                 bool startIsHighwayEnd = _map.LaneAt(_startCell).Active && Side.Count(_map.Mask(_startCell)) == 1;
                 if (to == _startCell && !Closed && _path.Count >= MinRingCells &&
                     (!_map.LaneAt(_startCell).Active || startIsHighwayEnd))
@@ -300,10 +302,14 @@ namespace CityGame.CellRoads
             if (!lane.Active) return Vector2.zero;
             int mask = _map.Mask(cell);
             if (Side.Count(mask) != 1) return Vector2.zero;
-            if ((mask & Side.N) != 0) return Vector2.down;
-            if ((mask & Side.S) != 0) return Vector2.up;
-            if ((mask & Side.E) != 0) return Vector2.left;
-            if ((mask & Side.W) != 0) return Vector2.right;
+            if ((mask & Side.N)  != 0) return Vector2.down;
+            if ((mask & Side.S)  != 0) return Vector2.up;
+            if ((mask & Side.E)  != 0) return Vector2.left;
+            if ((mask & Side.W)  != 0) return Vector2.right;
+            if ((mask & Side.NE) != 0) return new Vector2(-1f, -1f).normalized;
+            if ((mask & Side.SE) != 0) return new Vector2(-1f,  1f).normalized;
+            if ((mask & Side.SW) != 0) return new Vector2( 1f,  1f).normalized;
+            if ((mask & Side.NW) != 0) return new Vector2( 1f, -1f).normalized;
             return Vector2.zero;
         }
 

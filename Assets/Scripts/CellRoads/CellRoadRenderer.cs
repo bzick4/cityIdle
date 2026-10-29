@@ -65,7 +65,7 @@ namespace CityGame.CellRoads
 
             _views.Clear();
 
-            RoadLayers layers = RoadCellMesher.Build(_map.Cells, _map.DisplayTypeAt, _map.LaneAt, CellSize, WidthFraction);
+            RoadLayers layers = RoadCellMesher.Build(_map.Cells, _map.DisplayTypeAt, _map.LaneAt, CellSize, WidthFraction, _map.Strokes);
             if (_map.PreviewCell.HasValue && _map.IsJunction(_map.PreviewCell.Value))
                 RoadCellMesher.AppendSelection(layers, _map.PreviewCell.Value, CellSize);
             int baseOrder = RoadSpecs.SortingOrder(RoadLayer.Ground);

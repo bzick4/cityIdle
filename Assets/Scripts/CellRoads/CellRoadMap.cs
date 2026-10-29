@@ -70,6 +70,14 @@ namespace CityGame.CellRoads
         }
     }
 
+    /// <summary>Сохранённый штрих дороги: мировые координаты начала и конца + внутренние клетки (не на стыке).</summary>
+    public struct RoadStroke
+    {
+        public Vector2 From;
+        public Vector2 To;
+        public HashSet<Vector2Int> Interior;
+    }
+
     /// <summary>
     /// Дороги по клеткам. Одна клетка это один участок дороги. У клетки есть маска связей со
     /// сторонами: связь создаёт нарисованный путь, поэтому параллельные соседние дороги не склеиваются.
@@ -84,6 +92,10 @@ namespace CityGame.CellRoads
         readonly HashSet<Vector2Int> _standaloneHighwayCells = new HashSet<Vector2Int>();
         readonly HashSet<Vector2Int> _ownedHighwayCells = new HashSet<Vector2Int>();
         readonly Dictionary<Vector2Int, int> _standaloneOriginalMasks = new Dictionary<Vector2Int, int>();
+        readonly List<RoadStroke> _strokes = new List<RoadStroke>();
+
+        /// <summary>Все сохранённые прямолинейные штрихи (для рендеринга без зигзага).</summary>
+        public IReadOnlyList<RoadStroke> Strokes => _strokes;
 
         public event Action Changed;
 
@@ -1137,6 +1149,7 @@ namespace CityGame.CellRoads
             _standaloneHighwayCells.Clear();
             _ownedHighwayCells.Clear();
             _standaloneOriginalMasks.Clear();
+            _strokes.Clear();
             foreach (var kv in masks) _masks[kv.Key] = kv.Value;
             foreach (var kv in types)
                 if (_masks.ContainsKey(kv.Key) && IsValid(kv.Key, kv.Value)) _types[kv.Key] = kv.Value;
@@ -1197,6 +1210,49 @@ namespace CityGame.CellRoads
             for (int i = 0; i < path.Count; i++)
                 if (!_masks.ContainsKey(path[i])) n++;
             return n;
+        }
+
+        /// <summary>Запоминает прямолинейный штрих для последующего рендеринга единым квадом.</summary>
+        public void AddStroke(Vector2 from, Vector2 to, IList<Vector2Int> cells)
+        {
+            if (cells == null || cells.Count < 2) return;
+            var interior = new HashSet<Vector2Int>();
+            for (int i = 1; i < cells.Count - 1; i++) interior.Add(cells[i]);
+            _strokes.Add(new RoadStroke { From = from, To = to, Interior = interior });
+        }
+
+        /// <summary>Алгоритм Брезенхема: возвращает клетки от from до to включительно.</summary>
+        public static void BresenhamLine(Vector2Int from, Vector2Int to, List<Vector2Int> result)
+        {
+            result.Clear();
+            result.Add(from);
+            int dx = to.x - from.x, dy = to.y - from.y;
+            int ax = Mathf.Abs(dx), ay = Mathf.Abs(dy);
+            int sx = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+            int sy = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+            int x = from.x, y = from.y;
+            if (ax >= ay)
+            {
+                int err = ax / 2;
+                for (int i = 0; i < ax; i++)
+                {
+                    err -= ay;
+                    if (err < 0) { y += sy; err += ax; }
+                    x += sx;
+                    result.Add(new Vector2Int(x, y));
+                }
+            }
+            else
+            {
+                int err = ay / 2;
+                for (int i = 0; i < ay; i++)
+                {
+                    err -= ax;
+                    if (err < 0) { x += sx; err += ay; }
+                    y += sy;
+                    result.Add(new Vector2Int(x, y));
+                }
+            }
         }
 
         public void AddPath(IReadOnlyList<Vector2Int> path)

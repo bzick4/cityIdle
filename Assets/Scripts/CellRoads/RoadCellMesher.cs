@@ -62,14 +62,29 @@ namespace CityGame.CellRoads
         public static RoadLayers Build(IEnumerable<KeyValuePair<Vector2Int, int>> cells,
             Func<Vector2Int, JunctionType> typeOf, Func<Vector2Int, HighwayLane> laneOf, float cellSize,
             float widthFraction)
+            => Build(cells, typeOf, laneOf, cellSize, widthFraction, null);
+
+        public static RoadLayers Build(IEnumerable<KeyValuePair<Vector2Int, int>> cells,
+            Func<Vector2Int, JunctionType> typeOf, Func<Vector2Int, HighwayLane> laneOf, float cellSize,
+            float widthFraction, IReadOnlyList<RoadStroke> strokes)
         {
             var layers = new RoadLayers();
             var entries = new List<KeyValuePair<Vector2Int, int>>();
             foreach (var item in cells) entries.Add(item);
             var allMasks = new Dictionary<Vector2Int, int>();
             foreach (var item in entries) allMasks[item.Key] = item.Value;
+
+            // Внутренние клетки диагональных штрихов пропускаем в основном цикле и рендерим единой лентой.
+            var strokeInterior = new HashSet<Vector2Int>();
+            if (strokes != null)
+                foreach (RoadStroke stroke in strokes)
+                    if (stroke.Interior != null)
+                        foreach (Vector2Int c in stroke.Interior)
+                            if (allMasks.TryGetValue(c, out int m) && Side.Count(m) == 2)
+                                strokeInterior.Add(c);
             foreach (var kv in entries)
             {
+                if (strokeInterior.Contains(kv.Key)) continue;
                 Vector2 c = new Vector2((kv.Key.x + 0.5f) * cellSize, (kv.Key.y + 0.5f) * cellSize);
                 JunctionType type = typeOf != null ? typeOf(kv.Key) : JunctionType.Plain;
                 HighwayLane lane = laneOf != null ? laneOf(kv.Key) : default;
@@ -130,6 +145,7 @@ namespace CityGame.CellRoads
             }
 
             AppendDiagonalStrips(layers, allMasks, cellSize, widthFraction, typeOf, laneOf);
+            AppendStrokes(layers, strokes, allMasks, cellSize, widthFraction);
             if (laneOf != null) AppendStandaloneHighways(layers, entries, laneOf, cellSize);
 
             return layers;
@@ -216,6 +232,68 @@ namespace CityGame.CellRoads
                     float dashHalf = ext * 0.3f;
                     Vector2 da = cc - dn * dashHalf;
                     Vector2 db = cc + dn * dashHalf;
+                    int mi = mv.Count;
+                    mv.Add(new Vector3(da.x - perp.x * mhw, da.y - perp.y * mhw));
+                    mv.Add(new Vector3(da.x + perp.x * mhw, da.y + perp.y * mhw));
+                    mv.Add(new Vector3(db.x + perp.x * mhw, db.y + perp.y * mhw));
+                    mv.Add(new Vector3(db.x - perp.x * mhw, db.y - perp.y * mhw));
+                    mt.Add(mi); mt.Add(mi + 1); mt.Add(mi + 2);
+                    mt.Add(mi); mt.Add(mi + 2); mt.Add(mi + 3);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Сохранённые штрихи рендерим единой прямой лентой — только для не-осевых и не-45° случаев,
+        /// которые клеточный рендерер иначе показал бы зигзагом.
+        /// </summary>
+        static void AppendStrokes(RoadLayers L, IReadOnlyList<RoadStroke> strokes,
+            Dictionary<Vector2Int, int> allMasks, float cellSize, float widthFraction)
+        {
+            if (strokes == null || strokes.Count == 0) return;
+            float hw = cellSize * widthFraction * 0.5f;
+            float mhw = cellSize * MarkingWidth * 0.5f;
+
+            foreach (RoadStroke stroke in strokes)
+            {
+                float dx = stroke.To.x - stroke.From.x;
+                float dy = stroke.To.y - stroke.From.y;
+                float adx = Mathf.Abs(dx), ady = Mathf.Abs(dy);
+                // Горизонталь, вертикаль и ровно 45° уже обрабатываются без штриховых данных.
+                bool trivial = adx < 0.01f || ady < 0.01f ||
+                               Mathf.Abs(adx - ady) < 0.02f * Mathf.Max(adx, ady);
+                if (trivial) continue;
+
+                Vector2 from = stroke.From;
+                Vector2 to = stroke.To;
+                Vector2 d = to - from;
+                if (d.sqrMagnitude < 0.01f) continue;
+                Vector2 dn = d.normalized;
+                Vector2 perp = new Vector2(-dn.y, dn.x);
+
+                // Полотно.
+                var v = L.Verts[RoadLayers.Road];
+                var t = L.Tris[RoadLayers.Road];
+                int i0 = v.Count;
+                v.Add(new Vector3(from.x - perp.x * hw, from.y - perp.y * hw));
+                v.Add(new Vector3(from.x + perp.x * hw, from.y + perp.y * hw));
+                v.Add(new Vector3(to.x   + perp.x * hw, to.y   + perp.y * hw));
+                v.Add(new Vector3(to.x   - perp.x * hw, to.y   - perp.y * hw));
+                t.Add(i0); t.Add(i0 + 1); t.Add(i0 + 2);
+                t.Add(i0); t.Add(i0 + 2); t.Add(i0 + 3);
+
+                // Пунктирная осевая.
+                float totalLen = d.magnitude;
+                float period = cellSize * 0.7f;
+                int numDashes = Mathf.Max(1, Mathf.RoundToInt(totalLen / period));
+                var mv = L.Verts[RoadLayers.Marking];
+                var mt = L.Tris[RoadLayers.Marking];
+                for (int k = 0; k < numDashes; k++)
+                {
+                    float t0 = (k + 0.15f) / numDashes;
+                    float t1 = (k + 0.85f) / numDashes;
+                    Vector2 da = Vector2.Lerp(from, to, t0);
+                    Vector2 db = Vector2.Lerp(from, to, t1);
                     int mi = mv.Count;
                     mv.Add(new Vector3(da.x - perp.x * mhw, da.y - perp.y * mhw));
                     mv.Add(new Vector3(da.x + perp.x * mhw, da.y + perp.y * mhw));

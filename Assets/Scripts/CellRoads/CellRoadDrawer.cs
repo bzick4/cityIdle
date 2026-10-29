@@ -73,8 +73,6 @@ namespace CityGame.CellRoads
 
         readonly List<Vector2Int> _path = new List<Vector2Int>();
         bool _drawing;
-        bool _dirKnown;
-        Vector2Int _dir;
         bool _previewDirty;
 
         GameObject _preview;
@@ -147,8 +145,6 @@ namespace CityGame.CellRoads
                 if (!Allowed(start)) return;
 
                 _drawing = true;
-                _dirKnown = false;
-                _dir = Vector2Int.zero;
                 _path.Clear();
                 _path.Add(start);
                 _previewDirty = true;
@@ -171,56 +167,29 @@ namespace CityGame.CellRoads
             return new Vector2(p.x, p.y);
         }
 
-        /// <summary>Округляет смещение до ближайшего из 8 направлений (как ферзь в шахматах).</summary>
-        static Vector2Int Snap8(Vector2Int delta)
-        {
-            if (delta.x == 0 && delta.y == 0) return Vector2Int.zero;
-            float angle = Mathf.Atan2(delta.y, delta.x);
-            float snapped = Mathf.Round(angle / (Mathf.PI * 0.25f)) * (Mathf.PI * 0.25f);
-            return new Vector2Int(Mathf.RoundToInt(Mathf.Cos(snapped)), Mathf.RoundToInt(Mathf.Sin(snapped)));
-        }
-
-        /// <summary>Двигает конец дороги к клетке под пальцем в одном из 8 направлений.</summary>
+        /// <summary>Пересчитывает путь от стартовой клетки до цели по алгоритму Брезенхема (любой угол).</summary>
         void Follow(Vector2Int target)
         {
-            for (int guard = 0; guard < 256; guard++)
+            if (_path.Count == 0) return;
+            Vector2Int start = _path[0];
+            if (target == start)
             {
-                Vector2Int tail = _path[_path.Count - 1];
-                if (tail == target) return;
-
-                // Откат назад по пути.
-                int idx = _path.IndexOf(target);
-                if (idx >= 0)
-                {
-                    _path.RemoveRange(idx + 1, _path.Count - idx - 1);
-                    _previewDirty = true;
-                    return;
-                }
-
-                // Направление фиксируется один раз по вектору от старта жеста и больше не меняется.
-                if (!_dirKnown)
-                {
-                    Vector2Int snap = Snap8(target - _path[0]);
-                    if (snap == Vector2Int.zero) return;
-                    _dir = snap;
-                    _dirKnown = true;
-                }
-
-                // Останавливаемся, если хвост прошёл цель в текущем направлении.
-                {
-                    Vector2 dirF = new Vector2(_dir.x, _dir.y).normalized;
-                    Vector2Int rawTail = target - tail;
-                    float along = rawTail.x * dirF.x + rawTail.y * dirF.y;
-                    if (along <= 0f) return;
-                }
-
-                Vector2Int next = tail + _dir;
-                if (!Allowed(next)) return;
-                if (_path.Contains(next)) return;
-
-                _path.Add(next);
-                _previewDirty = true;
+                if (_path.Count > 1) { _path.RemoveRange(1, _path.Count - 1); _previewDirty = true; }
+                return;
             }
+            var line = new List<Vector2Int>();
+            CellRoadMap.BresenhamLine(start, target, line);
+            for (int i = 1; i < line.Count; i++)
+            {
+                if (!Allowed(line[i]))
+                {
+                    line.RemoveRange(i, line.Count - i);
+                    break;
+                }
+            }
+            _path.Clear();
+            _path.AddRange(line);
+            _previewDirty = true;
         }
 
         /// <summary>Палец отпущен: строить пока не строим, ждём подтверждения.</summary>
@@ -260,6 +229,13 @@ namespace CityGame.CellRoads
 
             if (total > 0f) _economy.TrySpend(total);
             _map.AddPath(accepted);
+            // Для диагональных штрихов сохраняем прямую линию: рендерер пропустит зигзаг.
+            if (accepted.Count >= 2)
+            {
+                Vector2Int a0 = accepted[0], a1 = accepted[accepted.Count - 1];
+                if (a0.x != a1.x && a0.y != a1.y)
+                    _map.AddStroke(CellCenter(a0), CellCenter(a1), accepted);
+            }
             Committed?.Invoke(accepted, total);
         }
 
@@ -270,8 +246,11 @@ namespace CityGame.CellRoads
             if (_path.Count == 0) return;
 
             Mesh mesh;
-            // Диагональ: один прямой квад от первой до последней клетки — без зигзага по клеткам.
-            if (_path.Count >= 2 && _dirKnown && _dir.x != 0 && _dir.y != 0)
+            // Любая диагональ (не горизонталь/вертикаль): один прямой квад от первой до последней клетки.
+            bool isDiag = _path.Count >= 2 &&
+                          _path[_path.Count - 1].x != _path[0].x &&
+                          _path[_path.Count - 1].y != _path[0].y;
+            if (isDiag)
             {
                 mesh = BuildStripMesh(CellCenter(_path[0]), CellCenter(_path[_path.Count - 1]),
                                       WidthFraction * CellSize * 0.5f);
