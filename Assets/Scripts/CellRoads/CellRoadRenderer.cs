@@ -9,11 +9,11 @@ namespace CityGame.CellRoads
     {
         public float CellSize = 1f;
         [Range(0.2f, 0.9f)] public float WidthFraction = 0.5f;
-        public Color MarkingColor = new Color32(0xE9, 0xE6, 0xDA, 0xFF);
-        public Color MedianColor = new Color32(0xF2, 0xB8, 0x4B, 0xFF);
-        public Color SelectionColor = new Color32(0x4D, 0xA3, 0xFF, 0xFF);
-        public Color IslandColor = new Color32(0xA9, 0xD1, 0x8E, 0xFF);
-        public Color ShadowColor = new Color32(0x1E, 0x24, 0x2B, 0x59);
+        public Color MarkingColor = new Color32(0xE4, 0xDE, 0xC8, 0xFF);
+        public Color MedianColor = new Color32(0xF5, 0xBC, 0x2C, 0xFF);
+        public Color SelectionColor = new Color32(0x48, 0xA8, 0xFF, 0xFF);
+        public Color IslandColor = new Color32(0x72, 0xC8, 0x58, 0xFF);
+        public Color ShadowColor = new Color32(0x18, 0x20, 0x2C, 0x60);
 
         CellRoadMap _map;
         readonly List<GameObject> _views = new List<GameObject>();

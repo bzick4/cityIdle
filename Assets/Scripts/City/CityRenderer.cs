@@ -220,11 +220,11 @@ namespace CityGame.Buildings
 
             // 2. Тень. Прямоугольники без наложений, поэтому полупрозрачность не удваивается.
             Vector2 so = new Vector2(0.045f, -0.06f) * cs;
-            Color shadow = new Color(0.07f, 0.09f, 0.12f, 0.22f);
+            Color shadow = new Color(0.06f, 0.08f, 0.12f, 0.30f);
             ForEachFootprint(d, half, gap, (min, max) => m.Rect(min + so, max + so, shadow), 0f);
 
             // 3. Основа тёмнее крыши, из-за неё получается контур.
-            Color rimColor = Darken(body, 0.28f);
+            Color rimColor = Darken(body, 0.36f);
             ForEachFootprint(d, half, gap, (min, max) => m.Rect(min, max, rimColor), 0.002f);
 
             // 4. Крыша по району единым полотном.

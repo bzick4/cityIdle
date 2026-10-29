@@ -18,9 +18,9 @@ namespace CityGame.Sectors
         readonly MeshBatch _batch = new MeshBatch();
         GameObject _view;
 
-        static readonly Color Shadow = new Color(0.1f, 0.18f, 0.1f, 0.22f);
-        static readonly Color Crown = new Color32(0x58, 0x9E, 0x55, 0xFF);
-        static readonly Color Light = new Color32(0x7C, 0xC0, 0x6C, 0xFF);
+        static readonly Color Shadow = new Color(0.06f, 0.16f, 0.06f, 0.30f);
+        static readonly Color Crown = new Color32(0x3A, 0xAA, 0x46, 0xFF);
+        static readonly Color Light = new Color32(0x72, 0xD0, 0x58, 0xFF);
 
         public void Bind(Biomes biomes, SectorMap sectors)
         {

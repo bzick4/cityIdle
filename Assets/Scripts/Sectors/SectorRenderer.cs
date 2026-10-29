@@ -12,12 +12,12 @@ namespace CityGame.Sectors
     /// </summary>
     public sealed class SectorRenderer : MonoBehaviour
     {
-        public Color OpenColor = new Color32(0xF6, 0xF3, 0xEC, 0xFF);
-        [Tooltip("Закрытые сектора: тёмно-серый, ближе к чёрному")]
-        public Color FrontierColor = new Color32(0x1F, 0x23, 0x29, 0xFF);
+        public Color OpenColor = new Color32(0xF2, 0xEC, 0xDC, 0xFF);
+        [Tooltip("Закрытые сектора: тёмно-синий")]
+        public Color FrontierColor = new Color32(0x1C, 0x24, 0x30, 0xFF);
         [Tooltip("Насколько закрытый сектор намекает на свой биом, 0..1")]
-        [Range(0f, 0.4f)] public float ClosedHint = 0.12f;
-        public Color PendingColor = new Color32(0xBF, 0xD9, 0xEE, 0xFF);
+        [Range(0f, 0.4f)] public float ClosedHint = 0.15f;
+        public Color PendingColor = new Color32(0x90, 0xC4, 0xF0, 0xFF);
         [Range(0.9f, 1f)] public float Gap = 0.985f;
         public float CellSize = 1f;
         [Range(0.01f, 0.1f)] public float GridLine = 0.04f;
