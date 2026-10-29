@@ -495,7 +495,8 @@ namespace CityGame.Buildings
             CardDeck = GetOrAdd<BuildingCardDeck>();
             CardDeck.CellSize = CellSize;
             CardDeck.Bind(Placer, Economy, _hud);
-            CardDeck.SetVisible(false);
+            CardDeck.RoadsRequested += () => _hud.OpenRoadsPage();
+            CardDeck.EraseRequested += () => Select(Tool.Erase);
 
             Started = true;
             if (data != null) Apply(data);
@@ -539,7 +540,7 @@ namespace CityGame.Buildings
             RampingTool.enabled = tool == Tool.Ramp;
             Rig.PanEnabled = tool == Tool.Pan;
             if (BuildingTapper != null) BuildingTapper.enabled = tool == Tool.Pan;
-            if (CardDeck != null) CardDeck.SetVisible(tool == Tool.Pan);
+            if (CardDeck != null && tool != Tool.Pan) CardDeck.HideAll();
 
             ServiceZones.Emphasis = tool == Tool.Service;
             Placer.EraseMode = tool == Tool.Erase;

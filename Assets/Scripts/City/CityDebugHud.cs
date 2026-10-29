@@ -89,6 +89,13 @@ namespace CityGame.Buildings
             SetPopup(Popup.None);
         }
 
+        /// <summary>Открыть страницу дорог напрямую (вызывается из BuildingCardDeck).</summary>
+        public void OpenRoadsPage()
+        {
+            _popup = Popup.Tools;
+            _toolPage = ToolPage.Roads;
+        }
+
         public void Bind(CitySystem city)
         {
             _city = city;
@@ -381,9 +388,20 @@ namespace CityGame.Buildings
             Anchors["shop"] = shop;
             Anchors["info"] = new Rect(margin + barH, barY, w - 2f * margin - barH, barH);
             Draw(shop, _circle, ShopColor);
-            GUI.Label(shop, _popup == Popup.Tools ? "×" : "$", _lblShop);
+            bool deckShowing = _city.CardDeck != null && _city.CardDeck.IsVisible;
+            GUI.Label(shop, (deckShowing || _popup == Popup.Tools) ? "×" : "$", _lblShop);
             if (GUI.Button(shop, GUIContent.none, GUIStyle.none))
-                SetPopup(_popup == Popup.Tools ? Popup.None : Popup.Tools);
+            {
+                if (_city.CardDeck != null)
+                {
+                    if (_popup == Popup.Tools) SetPopup(Popup.None);
+                    _city.CardDeck.ToggleDeck();
+                }
+                else
+                {
+                    SetPopup(_popup == Popup.Tools ? Popup.None : Popup.Tools);
+                }
+            }
 
             // Панели встают стопкой вверх от полоски.
             float top = barY - 6f;
