@@ -174,5 +174,38 @@ namespace CityGame.Buildings
 
             if (_model.Place(cell, Category, Kind)) _economy.TrySpend(cost);
         }
+
+        /// <summary>Проверка без размещения — для госта карточки.</summary>
+        public PlaceResult CheckPlacement(Vector2Int cell, BuildingCategory cat, ServiceKind kind)
+        {
+            if (_model.HasCell(cell)) return PlaceResult.Occupied;
+            if (CanPlaceAt != null && !CanPlaceAt(CellCenter(cell))) return PlaceResult.OutOfSector;
+            if (BlockedByRoad(cell)) return PlaceResult.Occupied;
+            if (Ports != null && Ports.Has(cell)) return PlaceResult.Occupied;
+            if (Buses != null && Buses.Has(cell)) return PlaceResult.Occupied;
+            if (Canals != null && Canals.Has(cell)) return PlaceResult.Occupied;
+            if (_biomes != null && !_biomes.CanBuild(cell)) return PlaceResult.NoBuild;
+            float cost = _economy.CostAt(cat, kind, cell);
+            if (_economy.Money < cost) return PlaceResult.NoMoney;
+            return PlaceResult.Ok;
+        }
+
+        /// <summary>Разовое размещение с карточки — без активации режима рисования.</summary>
+        public PlaceResult TryPlaceAt(Vector2Int cell, BuildingCategory cat, ServiceKind kind)
+        {
+            if (_model.HasCell(cell)) return PlaceResult.Occupied;
+            if (CanPlaceAt != null && !CanPlaceAt(CellCenter(cell))) return PlaceResult.OutOfSector;
+            if (BlockedByRoad(cell)) return PlaceResult.Occupied;
+            if (Ports != null && Ports.Has(cell)) return PlaceResult.Occupied;
+            if (Buses != null && Buses.Has(cell)) return PlaceResult.Occupied;
+            if (Canals != null && Canals.Has(cell)) return PlaceResult.Occupied;
+            if (_biomes != null && !_biomes.CanBuild(cell)) return PlaceResult.NoBuild;
+            float cost = _economy.CostAt(cat, kind, cell);
+            if (_economy.Money < cost) return PlaceResult.NoMoney;
+            if (_model.Place(cell, cat, kind)) { _economy.TrySpend(cost); return PlaceResult.Ok; }
+            return PlaceResult.Occupied;
+        }
     }
+
+    public enum PlaceResult { Ok, Occupied, OutOfSector, NoBuild, NoMoney }
 }

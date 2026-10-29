@@ -75,6 +75,7 @@ namespace CityGame.Buildings
         public RampMap Ramps { get; private set; }
         public BuildingTapper BuildingTapper { get; private set; }
         public CityCardView CardView { get; private set; }
+        public BuildingCardDeck CardDeck { get; private set; }
 
         /// <summary>Штрих выбранного инструмента (дорога, шоссе, односторонняя, канал, съезд) или null.</summary>
         public IRoadStroke ActiveStroke
@@ -491,6 +492,11 @@ namespace CityGame.Buildings
             BuildingTapper.Tapped += CardView.Show;
             BuildingTapper.enabled = false;
 
+            CardDeck = GetOrAdd<BuildingCardDeck>();
+            CardDeck.CellSize = CellSize;
+            CardDeck.Bind(Placer, Economy);
+            CardDeck.SetVisible(false);
+
             Started = true;
             if (data != null) Apply(data);
             else Rig.SetStartView(Vector2.zero, HexSize, InitialNeighborVisibleFraction);
@@ -533,6 +539,7 @@ namespace CityGame.Buildings
             RampingTool.enabled = tool == Tool.Ramp;
             Rig.PanEnabled = tool == Tool.Pan;
             if (BuildingTapper != null) BuildingTapper.enabled = tool == Tool.Pan;
+            if (CardDeck != null) CardDeck.SetVisible(tool == Tool.Pan);
 
             ServiceZones.Emphasis = tool == Tool.Service;
             Placer.EraseMode = tool == Tool.Erase;
