@@ -179,6 +179,7 @@ namespace CityGame.Buildings
         {
             if (_city != null && _city.Placer != null && _city.Placer.PendingEraseCell.HasValue) return true;
             var gui = new Vector2(screen.x, Screen.height - screen.y) / Scale;
+            if (_city.CardDeck != null && _city.CardDeck.ContainsScreenPoint(screen)) return true;
             return _barRect.Contains(gui) || _popupRect.Contains(gui) ||
                    (_city != null && _city.Tutorial != null && _city.Tutorial.Contains(screen)) ||
                    (_city != null && _city.Tapper != null && _city.Tapper.HasPending && _dialogRect.Contains(gui)) ||

@@ -34,6 +34,13 @@ namespace CityGame.City
         DeckState _state = DeckState.Hidden;
         public bool IsVisible => _state != DeckState.Hidden;
 
+        /// <summary>True если точка экрана над зоной колоды — для блокировки панорамирования карты.</summary>
+        public bool ContainsScreenPoint(Vector2 screen)
+        {
+            if (_state == DeckState.Hidden || _deckRoot == null) return false;
+            return RectTransformUtility.RectangleContainsScreenPoint(_deckRoot, screen, null);
+        }
+
         readonly List<CardSlot> _active = new List<CardSlot>();
 
         // ──────── ghost ────────
