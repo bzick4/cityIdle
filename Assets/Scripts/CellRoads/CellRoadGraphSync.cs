@@ -197,7 +197,9 @@ namespace CityGame.CellRoads
                 {
                     laneCells++;
                     if (!lane.OneWay) highwayCells++;
-                    if (exit == lane.Heading) fwd++;
+                    // Направление считаем только для односторонних улиц.
+                    // Шоссе (lane.OneWay=false) двустороннее — его heading не задаёт запрет встречного движения.
+                    else if (exit == lane.Heading) fwd++;
                     else bwd++;
                 }
 
@@ -235,7 +237,7 @@ namespace CityGame.CellRoads
                 followsRoute = lane.Heading == exit;
             }
 
-            int oneWay = followsRoute ? 1 : -1;
+            int oneWay = lane.OneWay ? (followsRoute ? 1 : -1) : 0;
             return new Traits
             {
                 OneWay = oneWay,
@@ -289,7 +291,7 @@ namespace CityGame.CellRoads
             bool followsRoute = lane.Heading == firstDirection;
             return new Traits
             {
-                OneWay = followsRoute ? 1 : -1,
+                OneWay = lane.OneWay ? (followsRoute ? 1 : -1) : 0,
                 Speed = lane.OneWay ? 1f : HighwaySpecs.SpeedFactor,
                 Capacity = lane.OneWay ? 1f : HighwaySpecs.CapacityFactor
             };
