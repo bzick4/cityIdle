@@ -42,6 +42,13 @@ namespace CityGame.City
 
         // Кэш текстур иконок — генерируются один раз
         static readonly Dictionary<string, Texture2D> _texCache = new Dictionary<string, Texture2D>();
+        static Font _uiFont;
+        static Font GetFont()
+        {
+            if (_uiFont == null)
+                _uiFont = Resources.Load<Font>("Fonts/NotoSans-VariableFont_wdth,wght");
+            return _uiFont;
+        }
 
         static Texture2D TexTool(Tool t)
         {
@@ -68,8 +75,8 @@ namespace CityGame.City
         //  Размеры и анимация
         // ──────────────────────────────────────────────────────────
 
-        const float CardW     = 68f;
-        const float CardH     = 96f;
+        const float CardW     = 74f;
+        const float CardH     = 104f;
         const float MaxStep   = 56f;
         const float MaxRotDeg = 7f;
         const float ArcDrop   = 9f;
@@ -401,7 +408,7 @@ namespace CityGame.City
             tnTxt.text=title; tnTxt.fontSize=9; tnTxt.fontStyle=FontStyle.Bold;
             tnTxt.color=new Color32(0x2A,0x22,0x16,0xFF);
             tnTxt.alignment=TextAnchor.LowerCenter; tnTxt.raycastTarget=false;
-            tnTxt.font=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            tnTxt.font=GetFont();
 
             // Нижняя полоса с суб-текстом
             var bot = new GameObject("Bot"); bot.transform.SetParent(go.transform, false);
@@ -417,7 +424,7 @@ namespace CityGame.City
             var suTxt = su.AddComponent<Text>();
             suTxt.text=sub; suTxt.fontSize=8; suTxt.color=new Color32(0x4A,0x3C,0x2C,0xFF);
             suTxt.alignment=TextAnchor.MiddleCenter; suTxt.raycastTarget=false;
-            suTxt.font=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            suTxt.font=GetFont();
 
             return rt;
         }
@@ -601,8 +608,8 @@ namespace CityGame.City
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_deckRoot, screen, null, out local)) return false;
             float cx = slot.Rt.anchoredPosition.x;
             float cy = slot.Rt.anchoredPosition.y;
-            return Mathf.Abs(local.x - cx) < CardW * 0.5f + 22f
-                && local.y > cy - 12f && local.y < cy + CardH + 36f;
+            return Mathf.Abs(local.x - cx) < CardW * 0.5f + 4f
+                && local.y > cy - 8f && local.y < cy + CardH + 24f;
         }
 
         // ──────────────────────────────────────────────────────────
