@@ -521,7 +521,8 @@ namespace CityGame.City
                     OnCardTapped(slot);
                 }
 
-                if (slot.Rt != null)
+                // После ShowBuildings/HideAll карточка могла быть уничтожена — проверяем
+                if (slot.Rt != null && slot.Rt.gameObject != null)
                 {
                     slot.Tween?.Kill();
                     slot.Rt.DOAnchorPos(new Vector2(slot.BaseX, slot.BaseY), 0.22f).SetEase(Ease.OutBack);
@@ -530,8 +531,8 @@ namespace CityGame.City
                 }
             }
 
-            // Потеря касания
-            if (!held && _held != null)
+            // Потеря касания (не в тот же фрейм, когда down — иначе сбрасывает _held раньше up)
+            if (!down && !held && _held != null)
             {
                 var slot = _held; _held = null;
                 _draggingToMap = false; _ghost.SetActive(false);
