@@ -373,6 +373,7 @@ namespace CityGame.Buildings
             Placer.Ports = Ports;
             Placer.Buses = BusStations;
             Placer.Canals = Canals;
+            Placer.Ramps = Ramps;
 
             var canalRenderer = GetOrAdd<CanalRenderer>();
             canalRenderer.CellSize = CellSize;
@@ -498,6 +499,7 @@ namespace CityGame.Buildings
             CardDeck.ToolRequested += tool =>
             {
                 if (tool == Tool.Service) SelectService(CardDeck.LastSelectedService);
+                if (tool == Tool.Junction) JunctionTool.AutoType = CardDeck.LastSelectedJunctionType;
                 Select(tool);
             };
 

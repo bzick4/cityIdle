@@ -33,6 +33,7 @@ namespace CityGame.Buildings
         public PortMap Ports;
         public BusMap Buses;
         public CanalMap Canals;
+        public CellRoads.RampMap Ramps;
 
         CityModel _model;
         Economy _economy;
@@ -144,6 +145,7 @@ namespace CityGame.Buildings
                 }
 
                 if (Canals != null && Canals.Has(cell)) Canals.Remove(cell);
+                if (Ramps != null && Ramps.HasCell(cell)) Ramps.RemoveAt(cell);
                 return;
             }
 

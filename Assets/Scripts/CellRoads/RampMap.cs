@@ -24,6 +24,16 @@ namespace CityGame.CellRoads
             Changed?.Invoke();
         }
 
+        public bool HasCell(Vector2Int cell) =>
+            _connectors.Exists(c => c.FromCell == cell || c.ToCell == cell);
+
+        public void RemoveAt(Vector2Int cell)
+        {
+            int before = _connectors.Count;
+            _connectors.RemoveAll(c => c.FromCell == cell || c.ToCell == cell);
+            if (_connectors.Count != before) Changed?.Invoke();
+        }
+
         public static Vector2 CellCenter(Vector2Int cell, float cellSize)
         {
             return new Vector2((cell.x + 0.5f) * cellSize, (cell.y + 0.5f) * cellSize);

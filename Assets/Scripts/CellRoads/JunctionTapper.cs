@@ -29,6 +29,9 @@ namespace CityGame.CellRoads
         public JunctionType Current => Selected.HasValue ? _map.TypeAt(Selected.Value) : JunctionType.Plain;
         public bool HasSelection => Selected.HasValue;
 
+        /// <summary>Тип, выбранный через меню карт. Null = ручной выбор через IMGUI после тапа.</summary>
+        public JunctionType? AutoType { get; set; }
+
         public void Bind(CellRoadMap map, Economy economy)
         {
             _map = map;
@@ -43,6 +46,7 @@ namespace CityGame.CellRoads
         void OnDisable()
         {
             Cancel();
+            AutoType = null;
         }
 
         public float PriceOf(JunctionType t)
@@ -153,6 +157,19 @@ namespace CityGame.CellRoads
             if (_map.IsJunction(cell))
             {
                 Select(cell);
+                if (AutoType.HasValue)
+                {
+                    if (_map.AvailableTypes(cell).Contains(AutoType.Value))
+                    {
+                        Choose(AutoType.Value);
+                        Apply();
+                    }
+                    else
+                    {
+                        Message?.Invoke("Этот тип недоступен здесь");
+                        Cancel();
+                    }
+                }
             }
             else
             {

@@ -17,6 +17,9 @@ namespace CityGame.City
 
         public event System.Action<Tool> ToolRequested;
         public ServiceKind LastSelectedService { get; private set; } = ServiceKind.Ambulance;
+        public CellRoads.JunctionType? LastSelectedJunctionType { get; private set; }
+
+        System.Action _backAction;
 
         // ──────────────────────────────────────────────────────────
         //  Зависимости / состояние
@@ -67,6 +70,12 @@ namespace CityGame.City
             if (!_texCache.TryGetValue("Back", out var tex)) { tex = ToolIcons.MakeBack(); _texCache["Back"] = tex; }
             return tex;
         }
+        static Texture2D TexJunction(CellRoads.JunctionType t)
+        {
+            string key = "J:" + (int)t;
+            if (!_texCache.TryGetValue(key, out var tex)) { tex = ToolIcons.MakeJunction(t); _texCache[key] = tex; }
+            return tex;
+        }
 
         // ──────────────────────────────────────────────────────────
         //  Tap state
@@ -114,10 +123,13 @@ namespace CityGame.City
         struct BldDef  { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon;
                          public BuildingCategory Category; public ServiceKind Kind; public Tool PlaceTool;
                          public bool DirectTool; } // если true — тап сразу активирует PlaceTool без здания
+        struct JunctionDef { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon;
+                             public CellRoads.JunctionType JType; }
 
-        CatDef[]  _catDefs;
-        ToolDef[] _roadDefs;
-        BldDef[]  _distDefs, _servDefs, _enrgDefs;
+        CatDef[]     _catDefs;
+        ToolDef[]    _roadDefs;
+        BldDef[]     _distDefs, _servDefs, _enrgDefs;
+        JunctionDef[] _junctionDefs;
 
         void InitDefs()
         {
@@ -174,6 +186,14 @@ namespace CityGame.City
                              Icon=TexService(ServiceKind.WaterTower),
                              Category=BuildingCategory.Service, Kind=ServiceKind.WaterTower, PlaceTool=Tool.Service },
             };
+            _junctionDefs = new[]
+            {
+                new JunctionDef { Title="Перекрёст.", Sub="обычная",  ArtBg=ART_ROADS, Icon=TexJunction(CellRoads.JunctionType.Plain),            JType=CellRoads.JunctionType.Plain },
+                new JunctionDef { Title="Кольцо",     Sub="круговая", ArtBg=ART_ROADS, Icon=TexJunction(CellRoads.JunctionType.Roundabout),        JType=CellRoads.JunctionType.Roundabout },
+                new JunctionDef { Title="Кольцо ш.",  Sub="шоссе",    ArtBg=ART_ROADS, Icon=TexJunction(CellRoads.JunctionType.HighwayRoundabout), JType=CellRoads.JunctionType.HighwayRoundabout },
+                new JunctionDef { Title="Мост ↔",     Sub="эстакада", ArtBg=ART_ROADS, Icon=TexJunction(CellRoads.JunctionType.Overpass),          JType=CellRoads.JunctionType.Overpass },
+                new JunctionDef { Title="Мост ↕",     Sub="эстакада", ArtBg=ART_ROADS, Icon=TexJunction(CellRoads.JunctionType.OverpassVertical),  JType=CellRoads.JunctionType.OverpassVertical },
+            };
         }
 
         // ──────────────────────────────────────────────────────────
@@ -187,9 +207,11 @@ namespace CityGame.City
             public bool  Lifted;
             public bool  IsBackCard;
             public bool  IsBldCard;
+            public bool  IsJunctionCard;
             public int   CatIndex = -1;
-            public ToolDef ToolDef;
-            public BldDef  BldDef;
+            public ToolDef     ToolDef;
+            public BldDef      BldDef;
+            public JunctionDef JunctionDef;
             public DG.Tweening.Tween Tween;
 
             public void AnimateTo(float x, float y, float rot, float dur, float delay = 0f)
@@ -281,6 +303,7 @@ namespace CityGame.City
         {
             ClearActive();
             _state = DeckState.SecondLevel;
+            _backAction = ShowCategories;
             _canvas.gameObject.SetActive(true);
             UpdateDeckY();
 
@@ -303,6 +326,7 @@ namespace CityGame.City
         {
             ClearActive();
             _state = DeckState.SecondLevel;
+            _backAction = ShowCategories;
             _canvas.gameObject.SetActive(true);
             UpdateDeckY();
 
@@ -318,6 +342,29 @@ namespace CityGame.City
                 string sub = _economy != null ? _economy.CostOf(d.Category, d.Kind).ToString("0") + "B" : d.Sub;
                 var s = new CardSlot { IsBldCard = true, BldDef = d };
                 s.Rt = CreateCard(d.Title, sub, d.ArtBg, d.Icon);
+                return s;
+            });
+        }
+
+        void ShowJunctions()
+        {
+            ClearActive();
+            _state = DeckState.SecondLevel;
+            _backAction = () => ShowTools(_roadDefs);
+            _canvas.gameObject.SetActive(true);
+            UpdateDeckY();
+
+            SpawnFan(_junctionDefs.Length + 1, i =>
+            {
+                if (i == 0)
+                {
+                    var back = new CardSlot { IsBackCard = true };
+                    back.Rt = CreateCard("", "назад", ART_BACK, TexBack());
+                    return back;
+                }
+                var d = _junctionDefs[i - 1];
+                var s = new CardSlot { IsJunctionCard = true, JunctionDef = d };
+                s.Rt = CreateCard(d.Title, d.Sub, d.ArtBg, d.Icon);
                 return s;
             });
         }
@@ -561,7 +608,7 @@ namespace CityGame.City
 
         void OnCardTapped(CardSlot slot)
         {
-            if (slot.IsBackCard) { ShowCategories(); return; }
+            if (slot.IsBackCard) { _backAction?.Invoke(); return; }
 
             if (_state == DeckState.Categories)
             {
@@ -577,7 +624,14 @@ namespace CityGame.City
                 return;
             }
 
-            // SecondLevel
+            // SecondLevel / ThirdLevel (junction)
+            if (slot.IsJunctionCard)
+            {
+                LastSelectedJunctionType = slot.JunctionDef.JType;
+                HideAll();
+                ToolRequested?.Invoke(Tool.Junction);
+                return;
+            }
             if (slot.IsBldCard)
             {
                 if (!slot.BldDef.DirectTool && slot.BldDef.Category == BuildingCategory.Service)
@@ -587,6 +641,8 @@ namespace CityGame.City
             }
             else
             {
+                // "Развилка" открывает под-уровень с типами
+                if (slot.ToolDef.Tool == Tool.Junction) { ShowJunctions(); return; }
                 HideAll();
                 ToolRequested?.Invoke(slot.ToolDef.Tool);
             }
