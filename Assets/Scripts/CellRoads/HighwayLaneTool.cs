@@ -478,20 +478,16 @@ namespace CityGame.CellRoads
             _preview.widthMultiplier = CellSize * (OneWayMode ? 0.5f : 0.88f);
             if (_path.Count < 2) { _preview.enabled = false; return; }
 
-            // Во время рисования — плавная кривая Безье напрямую (без зигзага по клеткам).
+            // Во время рисования — прямая линия от начала до конца пути (без зигзага и безье).
             // После подтверждения — сглаженный путь по фактическим клеткам.
-            if (_drawing && _hasBezPreview)
+            if (_drawing)
             {
-                const int steps = 24;
-                _preview.positionCount = steps + 1;
-                for (int i = 0; i <= steps; i++)
-                {
-                    float t = i / (float)steps;
-                    float u = 1f - t;
-                    Vector2 pt = u*u*u * _bezP0 + 3f*u*u*t * _bezP1
-                               + 3f*u*t*t * _bezP2 + t*t*t * _bezP3;
-                    _preview.SetPosition(i, new Vector3(pt.x, pt.y, -0.02f));
-                }
+                Vector2 startW = new Vector2((_startCell.x + 0.5f) * CellSize, (_startCell.y + 0.5f) * CellSize);
+                Vector2Int lastCell = _path[_path.Count - 1];
+                Vector2 endW = new Vector2((lastCell.x + 0.5f) * CellSize, (lastCell.y + 0.5f) * CellSize);
+                _preview.positionCount = 2;
+                _preview.SetPosition(0, new Vector3(startW.x, startW.y, -0.02f));
+                _preview.SetPosition(1, new Vector3(endW.x, endW.y, -0.02f));
             }
             else
             {
