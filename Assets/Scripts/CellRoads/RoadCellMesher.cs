@@ -480,6 +480,20 @@ namespace CityGame.CellRoads
             for (int i = 0; i < route.Count; i++)
                 points.Add(new Vector2((route[i].x + 0.5f) * cellSize, (route[i].y + 0.5f) * cellSize));
 
+            // Bresenham-диагональ: шаги меняют направление (чередуются E и NE и т.п.) — рисуем прямую ленту.
+            if (route.Count >= 3)
+            {
+                int s0 = Side.FromDelta(route[1] - route[0]);
+                for (int k = 2; k < route.Count; k++)
+                {
+                    if (Side.FromDelta(route[k] - route[k - 1]) != s0)
+                    {
+                        while (points.Count > 2) points.RemoveAt(1);
+                        break;
+                    }
+                }
+            }
+
             var curve = new List<Vector2>();
             var curveCells = new List<int>();
             const int steps = 10;

@@ -722,6 +722,12 @@ namespace CityGame.CellRoads
             }
 
             for (int i = 0; i < path.Count; i++)
+            {
+                if (crossing[i]) continue;
+                _standaloneHighwayCells.Add(path[i]);
+            }
+
+            for (int i = 0; i < path.Count; i++)
                 if (crossing[i]) MakeBridge(path[i], Side.FromDelta(path[i + 1] - path[i]));
 
             if (extendFromFirst && routeSign < 0) preserveDirection[0] = true;
