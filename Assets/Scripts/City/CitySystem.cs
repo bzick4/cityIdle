@@ -495,7 +495,11 @@ namespace CityGame.Buildings
             CardDeck = GetOrAdd<BuildingCardDeck>();
             CardDeck.CellSize = CellSize;
             CardDeck.Bind(Placer, Economy, _hud);
-            CardDeck.ToolRequested += Select;
+            CardDeck.ToolRequested += tool =>
+            {
+                if (tool == Tool.Service) SelectService(CardDeck.LastSelectedService);
+                Select(tool);
+            };
 
             Started = true;
             if (data != null) Apply(data);

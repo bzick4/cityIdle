@@ -7,25 +7,19 @@ namespace CityGame.City
 {
     using Buildings;
 
-    /// <summary>
-    /// Двухуровневая карточная колода.
-    /// Уровень 1 — 6 категорий (ДОРОГИ, РАЙОНЫ, СЛУЖБЫ, ЭНЕРГИЯ, ИНФРА, СНЕСТИ).
-    /// Уровень 2 — инструменты или здания категории.
-    ///
-    /// Здание: тяни вверх → карта следует за пальцем →
-    /// выше 40% экрана карта прячется, появляется цветной пин на карте.
-    /// Инструменты дорог/инфры: тап → активирует инструмент.
-    /// </summary>
     public sealed class BuildingCardDeck : MonoBehaviour
     {
         public float CellSize = 1f;
 
         // ──────────────────────────────────────────────────────────
-        //  Событие
+        //  События
         // ──────────────────────────────────────────────────────────
 
-        /// <summary>Сработало при выборе инструмента из карточки (дорога, служба, снести…).</summary>
+        /// <summary>Инструмент выбран тапом по карточке.</summary>
         public event System.Action<Tool> ToolRequested;
+
+        /// <summary>Последний выбранный тип службы (читает CitySystem перед ToolRequested(Tool.Service)).</summary>
+        public ServiceKind LastSelectedService { get; private set; } = ServiceKind.Ambulance;
 
         // ──────────────────────────────────────────────────────────
         //  Зависимости / состояние
@@ -36,13 +30,11 @@ namespace CityGame.City
         CityDebugHud   _hud;
         Canvas         _canvas;
         RectTransform  _deckRoot;
-        Camera         _cam;
 
         enum DeckState { Hidden, Categories, SecondLevel }
         DeckState _state = DeckState.Hidden;
         public bool IsVisible => _state != DeckState.Hidden;
 
-        /// <summary>True если точка экрана над зоной колоды — для блокировки панорамирования.</summary>
         public bool ContainsScreenPoint(Vector2 screen)
         {
             if (_state == DeckState.Hidden || _deckRoot == null) return false;
@@ -52,74 +44,58 @@ namespace CityGame.City
         readonly List<CardSlot> _active = new List<CardSlot>();
 
         // ──────────────────────────────────────────────────────────
-        //  Ghost / pin
-        // ──────────────────────────────────────────────────────────
-
-        GameObject   _ghost;
-        MeshRenderer _ghostMr;
-        static readonly Color GhostColorOk  = new Color(1f, 1f, 1f, 0.55f);
-        static readonly Color GhostColorBad = new Color(0.9f, 0.15f, 0.15f, 0.45f);
-
-        // ──────────────────────────────────────────────────────────
-        //  Drag
+        //  Tap state
         // ──────────────────────────────────────────────────────────
 
         CardSlot _held;
-        bool     _dragging;      // начали тянуть вверх
-        bool     _pinMode;       // выше 40% экрана — карта стала пином
-        Vector2  _dragStart;
-        const float DragStartPx  = 18f;
-        const float PinThreshold = 0.40f; // доля высоты экрана
+        Vector2  _pressPos;
+        const float TapMovePx = 20f;
 
         // ──────────────────────────────────────────────────────────
-        //  Константы карточек
+        //  Размеры и анимация
         // ──────────────────────────────────────────────────────────
 
-        const float CardW     = 82f;
-        const float CardH     = 115f;
-        const float MaxStep   = 64f;   // максимальный шаг при мало карт
-        const float MaxRotDeg = 9f;
-        const float ArcDrop   = 12f;
+        const float CardW     = 68f;
+        const float CardH     = 96f;
+        const float MaxStep   = 56f;
+        const float MaxRotDeg = 7f;
+        const float ArcDrop   = 9f;
         const float DeckYBase = 6f;
-        const float LiftY     = 30f;
-        const float AnimIn    = 0.28f;
-        const float AnimOut   = 0.16f;
-        const float Stagger   = 0.045f;
+        const float LiftY     = 26f;
+        const float AnimIn    = 0.26f;
+        const float AnimOut   = 0.15f;
+        const float Stagger   = 0.04f;
 
         // ──────────────────────────────────────────────────────────
-        //  Цвета — привязаны к игровой палитре
+        //  Игровая палитра
         // ──────────────────────────────────────────────────────────
 
-        // Категории
-        static readonly Color32 CAT_ROADS   = new Color32(0x3B, 0x45, 0x52, 0xFF); // асфальт
-        static readonly Color32 CAT_DIST    = new Color32(0x6F, 0xA8, 0xDC, 0xFF); // жильё синий
-        static readonly Color32 CAT_SERV    = new Color32(0xD9, 0x4F, 0x45, 0xFF); // пожарные красный
-        static readonly Color32 CAT_ENERGY  = new Color32(0xF2, 0xC1, 0x4E, 0xFF); // желтый
-        static readonly Color32 CAT_INFRA   = new Color32(0x7A, 0xB8, 0x62, 0xFF); // зелёный (леса)
-        static readonly Color32 CAT_ERASE   = new Color32(0x9A, 0xA0, 0xA6, 0xFF); // горный серый
+        static readonly Color32 CAT_ROADS  = new Color32(0x3B, 0x45, 0x52, 0xFF);
+        static readonly Color32 CAT_DIST   = new Color32(0x6F, 0xA8, 0xDC, 0xFF);
+        static readonly Color32 CAT_SERV   = new Color32(0xD9, 0x4F, 0x45, 0xFF);
+        static readonly Color32 CAT_ENERGY = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
+        static readonly Color32 CAT_INFRA  = new Color32(0x7A, 0xB8, 0x62, 0xFF);
+        static readonly Color32 CAT_ERASE  = new Color32(0x9A, 0xA0, 0xA6, 0xFF);
 
-        // Дорожные инструменты
-        static readonly Color32 ROAD_ROAD   = new Color32(0x3B, 0x45, 0x52, 0xFF);
-        static readonly Color32 ROAD_HWY    = new Color32(0x28, 0x38, 0x52, 0xFF);
-        static readonly Color32 ROAD_OW     = new Color32(0x42, 0x55, 0x68, 0xFF);
-        static readonly Color32 ROAD_JCT    = new Color32(0x48, 0x40, 0x68, 0xFF);
-        static readonly Color32 ROAD_CANAL  = new Color32(0x4F, 0xA3, 0xE0, 0xFF);
-        static readonly Color32 ROAD_RAMP   = new Color32(0xC8, 0x7A, 0x38, 0xFF);
+        static readonly Color32 ROAD_ROAD  = new Color32(0x3B, 0x45, 0x52, 0xFF);
+        static readonly Color32 ROAD_HWY   = new Color32(0x28, 0x38, 0x52, 0xFF);
+        static readonly Color32 ROAD_OW    = new Color32(0x42, 0x55, 0x68, 0xFF);
+        static readonly Color32 ROAD_JCT   = new Color32(0x48, 0x40, 0x68, 0xFF);
+        static readonly Color32 ROAD_CANAL = new Color32(0x4F, 0xA3, 0xE0, 0xFF);
+        static readonly Color32 ROAD_RAMP  = new Color32(0xC8, 0x7A, 0x38, 0xFF);
 
-        // Инфра
-        static readonly Color32 INFRA_EXP   = new Color32(0xCD, 0xE5, 0xB0, 0xFF);
-        static readonly Color32 INFRA_PORT  = new Color32(0xA9, 0xD6, 0xF2, 0xFF);
-        static readonly Color32 INFRA_BUS   = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
+        static readonly Color32 INFRA_EXP  = new Color32(0xCD, 0xE5, 0xB0, 0xFF);
+        static readonly Color32 INFRA_PORT = new Color32(0xA9, 0xD6, 0xF2, 0xFF);
+        static readonly Color32 INFRA_BUS  = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
 
-        // Здания — прямо из BuildingCategory.Color()
-        static readonly Color32 BLD_RES     = new Color32(0x6F, 0xA8, 0xDC, 0xFF);
-        static readonly Color32 BLD_COM     = new Color32(0xE8, 0x83, 0x8B, 0xFF);
-        static readonly Color32 BLD_IND     = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
-        static readonly Color32 SVC_AMB     = new Color32(0xD9, 0x4F, 0x45, 0xFF);
-        static readonly Color32 SVC_POL     = new Color32(0x3D, 0x5A, 0xA8, 0xFF);
-        static readonly Color32 SVC_FIRE    = new Color32(0xC8, 0x3C, 0x3C, 0xFF);
-        static readonly Color32 SVC_PWR     = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
-        static readonly Color32 SVC_WAT     = new Color32(0x4F, 0xA3, 0xE0, 0xFF);
+        static readonly Color32 BLD_RES  = new Color32(0x6F, 0xA8, 0xDC, 0xFF);
+        static readonly Color32 BLD_COM  = new Color32(0xE8, 0x83, 0x8B, 0xFF);
+        static readonly Color32 BLD_IND  = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
+        static readonly Color32 SVC_AMB  = new Color32(0xD9, 0x4F, 0x45, 0xFF);
+        static readonly Color32 SVC_POL  = new Color32(0x3D, 0x5A, 0xA8, 0xFF);
+        static readonly Color32 SVC_FIRE = new Color32(0xC8, 0x3C, 0x3C, 0xFF);
+        static readonly Color32 SVC_PWR  = new Color32(0xF2, 0xC1, 0x4E, 0xFF);
+        static readonly Color32 SVC_WAT  = new Color32(0x4F, 0xA3, 0xE0, 0xFF);
 
         // ──────────────────────────────────────────────────────────
         //  Определения карточек
@@ -127,56 +103,64 @@ namespace CityGame.City
 
         enum CatAction { ShowRoads, ShowDistricts, ShowServices, ShowEnergy, ShowInfra, Erase }
 
-        struct CatDef  { public string Title, Sub; public Color32 Art; public CatAction Action; }
-        struct ToolDef { public string Title, Sub; public Color32 Art; public Tool     Tool;    }
-        struct BldDef  { public string Title, Sub; public Color32 Art;
-                         public BuildingCategory Category; public ServiceKind Kind; }
+        struct CatDef  { public string Title, Sub, Icon; public Color32 Art; public CatAction Action; }
+        struct ToolDef { public string Title, Sub, Icon; public Color32 Art; public Tool     Tool;    }
+        struct BldDef  { public string Title, Sub, Icon; public Color32 Art;
+                         public BuildingCategory Category; public ServiceKind Kind; public Tool PlaceTool; }
 
         static readonly CatDef[] CatDefs =
         {
-            new CatDef { Title="ДОРОГИ",  Sub="трассы",   Art=CAT_ROADS,  Action=CatAction.ShowRoads      },
-            new CatDef { Title="РАЙОНЫ",  Sub="здания",   Art=CAT_DIST,   Action=CatAction.ShowDistricts  },
-            new CatDef { Title="СЛУЖБЫ",  Sub="сервисы",  Art=CAT_SERV,   Action=CatAction.ShowServices   },
-            new CatDef { Title="ЭНЕРГИЯ", Sub="питание",  Art=CAT_ENERGY, Action=CatAction.ShowEnergy     },
-            new CatDef { Title="ИНФРА",   Sub="сектора",  Art=CAT_INFRA,  Action=CatAction.ShowInfra      },
-            new CatDef { Title="СНЕСТИ",  Sub="убрать",   Art=CAT_ERASE,  Action=CatAction.Erase          },
+            new CatDef { Title="ДОРОГИ",  Sub="трассы",  Icon="--",Art=CAT_ROADS,  Action=CatAction.ShowRoads     },
+            new CatDef { Title="РАЙОНЫ",  Sub="здания",  Icon="H", Art=CAT_DIST,   Action=CatAction.ShowDistricts },
+            new CatDef { Title="СЛУЖБЫ",  Sub="сервисы", Icon="+", Art=CAT_SERV,   Action=CatAction.ShowServices  },
+            new CatDef { Title="ЭНЕРГИЯ", Sub="питание", Icon="#", Art=CAT_ENERGY, Action=CatAction.ShowEnergy    },
+            new CatDef { Title="ИНФРА",   Sub="сектора", Icon="<>",Art=CAT_INFRA,  Action=CatAction.ShowInfra     },
+            new CatDef { Title="СНЕСТИ",  Sub="убрать",  Icon="X", Art=CAT_ERASE,  Action=CatAction.Erase         },
         };
 
         static readonly ToolDef[] RoadDefs =
         {
-            new ToolDef { Title="Дорога",  Sub="улица",  Art=ROAD_ROAD,  Tool=Tool.Road     },
-            new ToolDef { Title="Шоссе",   Sub="быстро", Art=ROAD_HWY,   Tool=Tool.Highway  },
-            new ToolDef { Title="Одност.", Sub="полоса", Art=ROAD_OW,    Tool=Tool.OneWay   },
-            new ToolDef { Title="Развилка",Sub="узел",   Art=ROAD_JCT,   Tool=Tool.Junction },
-            new ToolDef { Title="Канал",   Sub="вода",   Art=ROAD_CANAL, Tool=Tool.Canal    },
-            new ToolDef { Title="Съезд",   Sub="рампа",  Art=ROAD_RAMP,  Tool=Tool.Ramp     },
+            new ToolDef { Title="Дорога",  Sub="улица",  Icon="__", Art=ROAD_ROAD,  Tool=Tool.Road     },
+            new ToolDef { Title="Шоссе",   Sub="быстро", Icon="==", Art=ROAD_HWY,   Tool=Tool.Highway  },
+            new ToolDef { Title="Одност.", Sub="полоса", Icon="->", Art=ROAD_OW,    Tool=Tool.OneWay   },
+            new ToolDef { Title="Развилка",Sub="узел",   Icon="Y",  Art=ROAD_JCT,   Tool=Tool.Junction },
+            new ToolDef { Title="Канал",   Sub="вода",   Icon="~~", Art=ROAD_CANAL, Tool=Tool.Canal    },
+            new ToolDef { Title="Съезд",   Sub="рампа",  Icon="/\\",Art=ROAD_RAMP,  Tool=Tool.Ramp     },
         };
 
         static readonly ToolDef[] InfraDefs =
         {
-            new ToolDef { Title="Расшир.", Sub="сектор", Art=INFRA_EXP,  Tool=Tool.Expand },
-            new ToolDef { Title="Порт",    Sub="море",   Art=INFRA_PORT, Tool=Tool.Port   },
-            new ToolDef { Title="Автобус", Sub="маршр.", Art=INFRA_BUS,  Tool=Tool.Bus    },
+            new ToolDef { Title="Расшир.", Sub="сектор", Icon="[]", Art=INFRA_EXP,  Tool=Tool.Expand },
+            new ToolDef { Title="Порт",    Sub="море",   Icon="|>", Art=INFRA_PORT, Tool=Tool.Port   },
+            new ToolDef { Title="Автобус", Sub="маршр.", Icon="()", Art=INFRA_BUS,  Tool=Tool.Bus    },
         };
 
         static readonly BldDef[] DistrictDefs =
         {
-            new BldDef { Title="Жильё",   Sub="жилой",  Art=BLD_RES, Category=BuildingCategory.Residential },
-            new BldDef { Title="Торговля", Sub="коммер.",Art=BLD_COM, Category=BuildingCategory.Commercial  },
-            new BldDef { Title="Произв.",  Sub="завод",  Art=BLD_IND, Category=BuildingCategory.Industrial  },
+            new BldDef { Title="Жильё",   Sub="жилой",  Icon="H", Art=BLD_RES,
+                         Category=BuildingCategory.Residential, PlaceTool=Tool.Residential },
+            new BldDef { Title="Торговля", Sub="коммер.",Icon="$", Art=BLD_COM,
+                         Category=BuildingCategory.Commercial,  PlaceTool=Tool.Commercial  },
+            new BldDef { Title="Произв.",  Sub="завод",  Icon="F", Art=BLD_IND,
+                         Category=BuildingCategory.Industrial,  PlaceTool=Tool.Industrial  },
         };
 
         static readonly BldDef[] ServiceDefs =
         {
-            new BldDef { Title="Скорая",   Sub="здоровье",Art=SVC_AMB,  Category=BuildingCategory.Service, Kind=ServiceKind.Ambulance  },
-            new BldDef { Title="Полиция",  Sub="охрана",  Art=SVC_POL,  Category=BuildingCategory.Service, Kind=ServiceKind.Police     },
-            new BldDef { Title="Пожарные", Sub="тушение", Art=SVC_FIRE, Category=BuildingCategory.Service, Kind=ServiceKind.Fire       },
+            new BldDef { Title="Скорая",   Sub="здоровье", Icon="+", Art=SVC_AMB,
+                         Category=BuildingCategory.Service, Kind=ServiceKind.Ambulance,  PlaceTool=Tool.Service },
+            new BldDef { Title="Полиция",  Sub="охрана",   Icon="*", Art=SVC_POL,
+                         Category=BuildingCategory.Service, Kind=ServiceKind.Police,     PlaceTool=Tool.Service },
+            new BldDef { Title="Пожарные", Sub="тушение",  Icon="!", Art=SVC_FIRE,
+                         Category=BuildingCategory.Service, Kind=ServiceKind.Fire,       PlaceTool=Tool.Service },
         };
 
         static readonly BldDef[] EnergyDefs =
         {
-            new BldDef { Title="Электро",   Sub="ток",  Art=SVC_PWR, Category=BuildingCategory.Service, Kind=ServiceKind.PowerPlant },
-            new BldDef { Title="Водобашня", Sub="вода", Art=SVC_WAT, Category=BuildingCategory.Service, Kind=ServiceKind.WaterTower },
+            new BldDef { Title="Электро",   Sub="ток",  Icon="#", Art=SVC_PWR,
+                         Category=BuildingCategory.Service, Kind=ServiceKind.PowerPlant, PlaceTool=Tool.Service },
+            new BldDef { Title="Водобашня", Sub="вода", Icon="~", Art=SVC_WAT,
+                         Category=BuildingCategory.Service, Kind=ServiceKind.WaterTower, PlaceTool=Tool.Service },
         };
 
         // ──────────────────────────────────────────────────────────
@@ -188,8 +172,9 @@ namespace CityGame.City
             public RectTransform Rt;
             public float BaseX, BaseY, BaseRot;
             public bool  Lifted;
-            public bool  IsDraggable; // здания — тяни на карту
             public bool  IsBackCard;
+            public bool  IsBldCard;
+            public int   CatIndex = -1;
             public ToolDef ToolDef;
             public BldDef  BldDef;
             public DG.Tweening.Tween Tween;
@@ -214,9 +199,7 @@ namespace CityGame.City
             _placer  = placer;
             _economy = economy;
             _hud     = hud;
-            _cam     = Camera.main;
             BuildCanvas();
-            BuildGhost();
         }
 
         void BuildCanvas()
@@ -238,19 +221,8 @@ namespace CityGame.City
             _deckRoot.anchorMin = new Vector2(0.5f, 0f);
             _deckRoot.anchorMax = new Vector2(0.5f, 0f);
             _deckRoot.pivot     = new Vector2(0.5f, 0f);
-            _deckRoot.sizeDelta = new Vector2(400f, CardH + DeckYBase + ArcDrop + 30f);
+            _deckRoot.sizeDelta = new Vector2(420f, CardH + DeckYBase + ArcDrop + 30f);
             _canvas.gameObject.SetActive(false);
-        }
-
-        void BuildGhost()
-        {
-            _ghost = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            _ghost.name = "BuildGhost";
-            _ghost.transform.localScale = Vector3.one * CellSize * 0.9f;
-            Destroy(_ghost.GetComponent<MeshCollider>());
-            _ghostMr = _ghost.GetComponent<MeshRenderer>();
-            _ghostMr.material = new Material(Shader.Find("Unlit/Color"));
-            _ghost.SetActive(false);
         }
 
         // ──────────────────────────────────────────────────────────
@@ -266,11 +238,8 @@ namespace CityGame.City
         public void HideAll()
         {
             if (_state == DeckState.Hidden) return;
-            _state  = DeckState.Hidden;
-            _held   = null;
-            _pinMode   = false;
-            _dragging  = false;
-            _ghost.SetActive(false);
+            _state = DeckState.Hidden;
+            _held  = null;
             AnimateOutAndDestroy(_active);
         }
 
@@ -283,16 +252,15 @@ namespace CityGame.City
             ClearActive();
             _state = DeckState.Categories;
             _canvas.gameObject.SetActive(true);
-            UpdateDeckPosition();
-            SpawnCards(CatDefs.Length, (i, baseX, baseY, baseR) =>
+            UpdateDeckY();
+
+            int n = CatDefs.Length;
+            SpawnFan(n, i =>
             {
                 var d = CatDefs[i];
-                var slot = new CardSlot { BaseX=baseX, BaseY=baseY, BaseRot=baseR };
-                slot.Rt = CreateCard(d.Title, d.Sub, d.Art, baseX, baseY, baseR);
-                // Сохраняем action через CatAction — кодируем в ToolDef.Tool как -1...-N
-                slot.ToolDef = new ToolDef { Title=d.Title, Art=d.Art, Tool=(Tool)(-1 - i) };
-                _active.Add(slot);
-                AnimateIn(slot, i);
+                var s = new CardSlot { CatIndex=i };
+                s.Rt = CreateCard(d.Title, d.Sub, d.Icon, d.Art, 0, -CardH - 50f, 0);
+                return s;
             });
         }
 
@@ -301,35 +269,22 @@ namespace CityGame.City
             ClearActive();
             _state = DeckState.SecondLevel;
             _canvas.gameObject.SetActive(true);
-            UpdateDeckPosition();
-            int total = defs.Length + 1;
-            float step = CalcStep(total);
-            float totalW = (total - 1) * step + CardW;
-            float startX = -totalW * 0.5f + CardW * 0.5f;
-            float halfN  = (total - 1) * 0.5f;
+            UpdateDeckY();
 
-            // Back card
+            int total = defs.Length + 1;
+            SpawnFan(total, i =>
             {
-                float t = halfN > 0 ? -1f : 0f;
-                float baseX = startX, baseY = DeckYBase - ArcDrop*(t*t), baseR = -MaxRotDeg*t;
-                var slot = new CardSlot { BaseX=baseX, BaseY=baseY, BaseRot=baseR, IsBackCard=true };
-                slot.Rt = CreateCard("←", "назад", CAT_ROADS, baseX, baseY, baseR);
-                _active.Add(slot);
-                AnimateIn(slot, 0);
-            }
-            for (int i = 0; i < defs.Length; i++)
-            {
-                int idx = i + 1;
-                float t = halfN > 0 ? (idx - halfN) / halfN : 0f;
-                float baseX = startX + idx * step;
-                float baseY = DeckYBase - ArcDrop*(t*t);
-                float baseR = -MaxRotDeg * t;
-                var d = defs[i];
-                var slot = new CardSlot { BaseX=baseX, BaseY=baseY, BaseRot=baseR, ToolDef=d };
-                slot.Rt = CreateCard(d.Title, d.Sub, d.Art, baseX, baseY, baseR);
-                _active.Add(slot);
-                AnimateIn(slot, idx);
-            }
+                if (i == 0)
+                {
+                    var back = new CardSlot { IsBackCard=true };
+                    back.Rt = CreateCard("<", "назад", "<", new Color32(0x60,0x60,0x60,0xFF), 0, -CardH - 50f, 0);
+                    return back;
+                }
+                var d = defs[i - 1];
+                var s = new CardSlot { ToolDef=d };
+                s.Rt = CreateCard(d.Title, d.Sub, d.Icon, d.Art, 0, -CardH - 50f, 0);
+                return s;
+            });
         }
 
         void ShowBuildings(BldDef[] defs)
@@ -337,40 +292,26 @@ namespace CityGame.City
             ClearActive();
             _state = DeckState.SecondLevel;
             _canvas.gameObject.SetActive(true);
-            UpdateDeckPosition();
-            int total = defs.Length + 1;
-            float step = CalcStep(total);
-            float totalW = (total - 1) * step + CardW;
-            float startX = -totalW * 0.5f + CardW * 0.5f;
-            float halfN  = (total - 1) * 0.5f;
+            UpdateDeckY();
 
-            // Back card
+            int total = defs.Length + 1;
+            SpawnFan(total, i =>
             {
-                float t = halfN > 0 ? -1f : 0f;
-                float baseX = startX, baseY = DeckYBase - ArcDrop*(t*t), baseR = -MaxRotDeg*t;
-                var slot = new CardSlot { BaseX=baseX, BaseY=baseY, BaseRot=baseR, IsBackCard=true };
-                slot.Rt = CreateCard("←", "назад", new Color32(0x78,0x78,0x78,0xFF), baseX, baseY, baseR);
-                _active.Add(slot);
-                AnimateIn(slot, 0);
-            }
-            for (int i = 0; i < defs.Length; i++)
-            {
-                int idx = i + 1;
-                float t = halfN > 0 ? (idx - halfN) / halfN : 0f;
-                float baseX = startX + idx * step;
-                float baseY = DeckYBase - ArcDrop*(t*t);
-                float baseR = -MaxRotDeg * t;
-                var d = defs[i];
-                string cost = _economy != null ? _economy.CostOf(d.Category, d.Kind).ToString("0") + "₿" : d.Sub;
-                var slot = new CardSlot { BaseX=baseX, BaseY=baseY, BaseRot=baseR, IsDraggable=true, BldDef=d };
-                slot.Rt = CreateCard(d.Title, cost, d.Art, baseX, baseY, baseR);
-                _active.Add(slot);
-                AnimateIn(slot, idx);
-            }
+                if (i == 0)
+                {
+                    var back = new CardSlot { IsBackCard=true };
+                    back.Rt = CreateCard("<", "назад", "<", new Color32(0x60,0x60,0x60,0xFF), 0, -CardH - 50f, 0);
+                    return back;
+                }
+                var d = defs[i - 1];
+                string sub = _economy != null ? _economy.CostOf(d.Category, d.Kind).ToString("0") + "B" : d.Sub;
+                var s = new CardSlot { IsBldCard=true, BldDef=d };
+                s.Rt = CreateCard(d.Title, sub, d.Icon, d.Art, 0, -CardH - 50f, 0);
+                return s;
+            });
         }
 
-        // helper: spawn N cards with fan layout
-        void SpawnCards(int n, System.Action<int, float, float, float> onCreate)
+        void SpawnFan(int n, System.Func<int, CardSlot> factory)
         {
             float step   = CalcStep(n);
             float totalW = (n - 1) * step + CardW;
@@ -382,17 +323,22 @@ namespace CityGame.City
                 float baseX = startX + i * step;
                 float baseY = DeckYBase - ArcDrop * (t * t);
                 float baseR = -MaxRotDeg * t;
-                onCreate(i, baseX, baseY, baseR);
+                var slot = factory(i);
+                slot.BaseX = baseX; slot.BaseY = baseY; slot.BaseRot = baseR;
+                slot.Rt.anchoredPosition = new Vector2(baseX, -CardH - 50f);
+                slot.Rt.localEulerAngles = Vector3.zero;
+                _active.Add(slot);
+                slot.AnimateTo(baseX, baseY, baseR, AnimIn, i * Stagger);
             }
         }
 
-        static float CalcStep(int n) => n <= 1 ? 0f : Mathf.Min(MaxStep, 360f / (n - 1));
+        static float CalcStep(int n) => n <= 1 ? 0f : Mathf.Min(MaxStep, 320f / (n - 1));
 
         // ──────────────────────────────────────────────────────────
-        //  Построение UI одной карточки
+        //  Построение одной карточки
         // ──────────────────────────────────────────────────────────
 
-        RectTransform CreateCard(string title, string sub, Color32 art, float x, float y, float rot)
+        RectTransform CreateCard(string title, string sub, string icon, Color32 art, float x, float y, float rot)
         {
             var go = new GameObject("Card_" + title);
             go.transform.SetParent(_deckRoot, false);
@@ -404,52 +350,75 @@ namespace CityGame.City
             rt.anchoredPosition = new Vector2(x, y);
             rt.localEulerAngles = new Vector3(0, 0, rot);
 
-            MakeRect(go.transform, "Shadow", new Color(0,0,0,0.18f), new Vector2(3f,-3f), new Vector2(CardW, CardH));
-            MakeRect(go.transform, "Frame",  new Color32(0x55,0x4A,0x3C,0xFF), Vector2.zero, new Vector2(CardW, CardH));
-            MakeRect(go.transform, "Bg",     new Color32(0xF2,0xEE,0xE6,0xFF), Vector2.zero, new Vector2(CardW-4f, CardH-4f));
+            // Тень
+            {
+                var sh = new GameObject("Shadow"); sh.transform.SetParent(go.transform, false);
+                var shRt = sh.AddComponent<RectTransform>();
+                shRt.anchorMin=Vector2.zero; shRt.anchorMax=Vector2.one;
+                shRt.offsetMin=new Vector2(3,-4); shRt.offsetMax=new Vector2(4,-3);
+                sh.AddComponent<Image>().color = new Color(0,0,0,0.20f);
+            }
+            // Рамка
+            AddRect(go.transform, "Frame", Vector2.zero, Vector2.zero, Vector2.zero,
+                    new Color32(0x4A,0x40,0x34,0xFF));
 
-            var artGo = MakeChild(go.transform, "Art", new Vector2(0f,0.34f), Vector2.one,
-                new Vector2(3f,0f), new Vector2(-3f,-3f));
-            artGo.GetComponent<Image>().color = art;
-            AddText(artGo.transform, "Title", title, 10, FontStyle.Bold, Color.white,
-                TextAnchor.LowerCenter, new Vector2(0f,0f), new Vector2(1f,0.38f));
+            // Фон
+            AddRect(go.transform, "Bg", Vector2.zero, new Vector2(2,2), new Vector2(-2,-2),
+                    new Color32(0xF0,0xEB,0xE2,0xFF));
 
-            var botGo = MakeChild(go.transform, "Bot", new Vector2(0f,0f), new Vector2(1f,0.34f),
-                new Vector2(3f,3f), new Vector2(-3f,0f));
-            botGo.GetComponent<Image>().color = new Color32(0xE4,0xDE,0xD4,0xFF);
-            AddText(botGo.transform, "Sub", sub, 8, FontStyle.Normal,
-                new Color32(0x4A,0x3C,0x2C,0xFF), TextAnchor.MiddleCenter, Vector2.zero, Vector2.one);
+            // Арт-панель (верхние ~64%)
+            var artGo = new GameObject("Art"); artGo.transform.SetParent(go.transform, false);
+            var artRt = artGo.AddComponent<RectTransform>();
+            artRt.anchorMin = new Vector2(0f, 0.36f); artRt.anchorMax = Vector2.one;
+            artRt.offsetMin = new Vector2(2,0); artRt.offsetMax = new Vector2(-2,-2);
+            artGo.AddComponent<Image>().color = art;
+
+            // Иконка — большой белый текст по центру (верхние 62% арта)
+            if (!string.IsNullOrEmpty(icon))
+                AddLabel(artGo.transform, "Icon", icon, 22, FontStyle.Bold,
+                         new Color(1f,1f,1f,0.88f), TextAnchor.MiddleCenter,
+                         new Vector2(0f,0.38f), Vector2.one);
+
+            // Название — нижние 38% арта
+            AddLabel(artGo.transform, "Title", title, 9, FontStyle.Bold,
+                     Color.white, TextAnchor.LowerCenter,
+                     Vector2.zero, new Vector2(1f,0.38f));
+
+            // Нижняя полоса
+            var botGo = new GameObject("Bot"); botGo.transform.SetParent(go.transform, false);
+            var botRt = botGo.AddComponent<RectTransform>();
+            botRt.anchorMin = new Vector2(0f,0f); botRt.anchorMax = new Vector2(1f,0.36f);
+            botRt.offsetMin = new Vector2(2,2); botRt.offsetMax = new Vector2(-2,0);
+            botGo.AddComponent<Image>().color = new Color32(0xE0,0xD9,0xCF,0xFF);
+
+            AddLabel(botGo.transform, "Sub", sub, 8, FontStyle.Normal,
+                     new Color32(0x4A,0x3C,0x2C,0xFF), TextAnchor.MiddleCenter,
+                     Vector2.zero, Vector2.one);
 
             return rt;
         }
 
-        static void MakeRect(Transform p, string n, Color c, Vector2 offset, Vector2 size)
+        static void AddRect(Transform parent, string name, Vector2 offset, Vector2 oMin, Vector2 oMax, Color color,
+                            Vector2? extraOffset = null)
         {
-            var go = new GameObject(n); go.transform.SetParent(p, false);
+            var go = new GameObject(name); go.transform.SetParent(parent, false);
             var rt = go.AddComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f,0.5f); rt.anchorMax = new Vector2(0.5f,0.5f);
-            rt.pivot = new Vector2(0.5f,0.5f); rt.sizeDelta = size; rt.anchoredPosition = offset;
-            go.AddComponent<Image>().color = c;
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+            rt.offsetMin = oMin;
+            rt.offsetMax = oMax;
+            rt.anchoredPosition += offset;
+            go.AddComponent<Image>().color = color;
         }
 
-        static GameObject MakeChild(Transform p, string n, Vector2 aMin, Vector2 aMax, Vector2 oMin, Vector2 oMax)
+        static void AddLabel(Transform parent, string name, string text, int size, FontStyle style,
+                             Color color, TextAnchor anchor, Vector2 aMin, Vector2 aMax)
         {
-            var go = new GameObject(n); go.transform.SetParent(p, false);
-            var rt = go.AddComponent<RectTransform>();
-            rt.anchorMin = aMin; rt.anchorMax = aMax; rt.offsetMin = oMin; rt.offsetMax = oMax;
-            go.AddComponent<Image>();
-            return go;
-        }
-
-        static void AddText(Transform p, string n, string text, int size, FontStyle style,
-            Color c, TextAnchor anchor, Vector2 aMin, Vector2 aMax)
-        {
-            var go = new GameObject(n); go.transform.SetParent(p, false);
+            var go = new GameObject(name); go.transform.SetParent(parent, false);
             var rt = go.AddComponent<RectTransform>();
             rt.anchorMin = aMin; rt.anchorMax = aMax;
-            rt.offsetMin = new Vector2(2f,1f); rt.offsetMax = new Vector2(-2f,-1f);
+            rt.offsetMin = new Vector2(1,1); rt.offsetMax = new Vector2(-1,-1);
             var t = go.AddComponent<Text>();
-            t.text = text; t.fontSize = size; t.fontStyle = style; t.color = c;
+            t.text = text; t.fontSize = size; t.fontStyle = style; t.color = color;
             t.alignment = anchor; t.raycastTarget = false;
             t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         }
@@ -458,37 +427,34 @@ namespace CityGame.City
         //  Анимации
         // ──────────────────────────────────────────────────────────
 
-        void AnimateIn(CardSlot slot, int order)
-        {
-            if (slot.Rt == null) return;
-            slot.Rt.anchoredPosition = new Vector2(slot.BaseX, -CardH - 50f);
-            slot.Rt.localEulerAngles = Vector3.zero;
-            slot.AnimateTo(slot.BaseX, slot.BaseY, slot.BaseRot, AnimIn, order * Stagger);
-        }
-
         void AnimateOutAndDestroy(List<CardSlot> slots)
         {
-            for (int i = 0; i < slots.Count; i++)
+            var copy = new List<CardSlot>(slots);
+            slots.Clear();
+            for (int i = 0; i < copy.Count; i++)
             {
-                var s = slots[i];
+                var s = copy[i];
                 s.Tween?.Kill();
                 if (s.Rt == null) continue;
                 var rt = s.Rt;
-                float delay = (slots.Count - 1 - i) * Stagger * 0.5f;
+                float delay = (copy.Count - 1 - i) * Stagger * 0.5f;
                 var seq = DOTween.Sequence();
                 if (delay > 0f) seq.AppendInterval(delay);
                 seq.Append(rt.DOAnchorPosY(-CardH - 60f, AnimOut).SetEase(Ease.InCubic))
                    .OnComplete(() => { if (rt != null) Destroy(rt.gameObject); });
                 s.Tween = seq.Play();
             }
-            float total = AnimOut + slots.Count * Stagger * 0.5f + 0.05f;
-            DOVirtual.DelayedCall(total, () => { if (_state == DeckState.Hidden && _canvas != null) _canvas.gameObject.SetActive(false); });
-            slots.Clear();
+            float hideDelay = AnimOut + copy.Count * Stagger * 0.5f + 0.05f;
+            DOVirtual.DelayedCall(hideDelay, () =>
+            {
+                if (_state == DeckState.Hidden && _canvas != null)
+                    _canvas.gameObject.SetActive(false);
+            });
         }
 
         void ClearActive()
         {
-            _held = null; _pinMode = false; _dragging = false; _ghost.SetActive(false);
+            _held = null;
             foreach (var s in _active) { s.Tween?.Kill(); if (s.Rt != null) Destroy(s.Rt.gameObject); }
             _active.Clear();
         }
@@ -500,11 +466,11 @@ namespace CityGame.City
         void Update()
         {
             if (_state == DeckState.Hidden || _canvas == null || !_canvas.gameObject.activeSelf) return;
-            UpdateDeckPosition();
+            UpdateDeckY();
             HandleInput();
         }
 
-        void UpdateDeckPosition()
+        void UpdateDeckY()
         {
             if (_deckRoot == null || _canvas == null) return;
             float px = _hud != null ? _hud.BottomPanelTopPx : 0f;
@@ -513,7 +479,7 @@ namespace CityGame.City
         }
 
         // ──────────────────────────────────────────────────────────
-        //  Ввод
+        //  Ввод — hover + tap (без drag-to-place)
         // ──────────────────────────────────────────────────────────
 
         void HandleInput()
@@ -523,8 +489,8 @@ namespace CityGame.City
             bool    held = GetPointerHeld();
             bool    up   = GetPointerUp();
 
-            // Hover-подъём (только без удержания)
-            if (_held == null && held)
+            // Hover-подъём
+            if (_held == null)
             {
                 foreach (var s in _active)
                 {
@@ -540,42 +506,9 @@ namespace CityGame.City
                 foreach (var s in _active)
                 {
                     if (!IsOnCard(pos, s)) continue;
-                    _held = s; _dragStart = pos; _dragging = false; _pinMode = false;
-                    s.AnimateTo(s.BaseX, s.BaseY + LiftY * 1.5f, 0f, 0.08f);
+                    _held = s; _pressPos = pos;
+                    s.AnimateTo(s.BaseX, s.BaseY + LiftY * 1.4f, 0f, 0.07f);
                     break;
-                }
-            }
-
-            // Удержание
-            if (_held != null && (held || down))
-            {
-                float dy = pos.y - _dragStart.y;
-                if (!_dragging && dy > DragStartPx) _dragging = true;
-
-                if (_dragging && _held.IsDraggable)
-                {
-                    bool wasPin = _pinMode;
-                    _pinMode = pos.y > Screen.height * PinThreshold;
-
-                    if (_pinMode)
-                    {
-                        // Карта уходит в пин-режим
-                        if (_held.Rt != null) _held.Rt.gameObject.SetActive(false);
-                        UpdateGhost(pos, _held, pinMode: true);
-                    }
-                    else
-                    {
-                        // Карта следует за пальцем в пространстве колоды
-                        if (_held.Rt != null)
-                        {
-                            _held.Rt.gameObject.SetActive(true);
-                            Vector2 local;
-                            RectTransformUtility.ScreenPointToLocalPointInRectangle(_deckRoot, pos, null, out local);
-                            _held.Rt.anchoredPosition = new Vector2(_held.BaseX, Mathf.Max(_held.BaseY, local.y - CardH * 0.5f));
-                            _held.Rt.localEulerAngles = Vector3.zero;
-                        }
-                        _ghost.SetActive(false);
-                    }
                 }
             }
 
@@ -583,41 +516,29 @@ namespace CityGame.City
             if (up && _held != null)
             {
                 var slot = _held; _held = null;
+                bool isTap = Vector2.Distance(pos, _pressPos) < TapMovePx;
 
-                if (_dragging && slot.IsDraggable && _pinMode)
-                {
-                    // Разместить здание в точке пина
-                    _pinMode = false; _dragging = false;
-                    _ghost.SetActive(false);
-                    PlaceBuilding(pos, slot.BldDef);
-                }
-                else
-                {
-                    _pinMode = false; _dragging = false; _ghost.SetActive(false);
-                    if (slot.Rt != null) slot.Rt.gameObject.SetActive(true);
-                    OnCardTapped(slot);
-                }
-
-                // Вернуть карточку (если ещё существует)
-                if (slot.Rt != null && slot.Rt.gameObject != null)
+                // Возврат карточки — только если колода ещё видна (не была скрыта в этот же кадр)
+                if (_state != DeckState.Hidden && slot.Rt != null && slot.Rt.gameObject != null)
                 {
                     slot.Tween?.Kill();
-                    slot.Rt.DOAnchorPos(new Vector2(slot.BaseX, slot.BaseY), 0.22f).SetEase(Ease.OutBack);
-                    slot.Rt.DOLocalRotate(new Vector3(0,0,slot.BaseRot), 0.22f).SetEase(Ease.OutBack);
+                    slot.Rt.DOAnchorPos(new Vector2(slot.BaseX, slot.BaseY), 0.20f).SetEase(Ease.OutBack);
+                    slot.Rt.DOLocalRotate(new Vector3(0, 0, slot.BaseRot), 0.20f).SetEase(Ease.OutBack);
                     slot.Lifted = false;
                 }
+
+                if (isTap) OnCardTapped(slot);
             }
 
-            // Потеря касания (не в тот же фрейм, что down)
+            // Потеря касания
             if (!down && !held && _held != null)
             {
                 var slot = _held; _held = null;
-                _pinMode = false; _dragging = false; _ghost.SetActive(false);
-                if (slot.Rt != null)
+                if (slot.Rt != null && slot.Rt.gameObject != null)
                 {
-                    slot.Rt.gameObject.SetActive(true);
-                    slot.Rt.DOAnchorPos(new Vector2(slot.BaseX, slot.BaseY), 0.18f).SetEase(Ease.OutCubic);
-                    slot.Rt.DOLocalRotate(new Vector3(0,0,slot.BaseRot), 0.18f).SetEase(Ease.OutCubic);
+                    slot.Tween?.Kill();
+                    slot.Rt.DOAnchorPos(new Vector2(slot.BaseX, slot.BaseY), 0.16f).SetEase(Ease.OutCubic);
+                    slot.Rt.DOLocalRotate(new Vector3(0, 0, slot.BaseRot), 0.16f).SetEase(Ease.OutCubic);
                     slot.Lifted = false;
                 }
             }
@@ -637,72 +558,33 @@ namespace CityGame.City
 
             if (_state == DeckState.Categories)
             {
-                // ToolDef.Tool закодирован как -(1+index)
-                int catIdx = -(int)slot.ToolDef.Tool - 1;
-                var act = CatDefs[catIdx].Action;
-                switch (act)
+                switch (CatDefs[slot.CatIndex].Action)
                 {
-                    case CatAction.ShowRoads:      ShowTools(RoadDefs);    break;
+                    case CatAction.ShowRoads:      ShowTools(RoadDefs);         break;
                     case CatAction.ShowDistricts:  ShowBuildings(DistrictDefs); break;
                     case CatAction.ShowServices:   ShowBuildings(ServiceDefs);  break;
                     case CatAction.ShowEnergy:     ShowBuildings(EnergyDefs);   break;
-                    case CatAction.ShowInfra:      ShowTools(InfraDefs);   break;
+                    case CatAction.ShowInfra:      ShowTools(InfraDefs);        break;
                     case CatAction.Erase:
                         HideAll();
                         ToolRequested?.Invoke(Tool.Erase);
                         break;
                 }
+                return;
             }
-            else // SecondLevel — tool card
+
+            // SecondLevel
+            if (slot.IsBldCard)
             {
+                if (slot.BldDef.Category == BuildingCategory.Service)
+                    LastSelectedService = slot.BldDef.Kind;
                 HideAll();
-                ToolRequested?.Invoke(slot.ToolDef.Tool);
-            }
-        }
-
-        // ──────────────────────────────────────────────────────────
-        //  Размещение здания
-        // ──────────────────────────────────────────────────────────
-
-        void PlaceBuilding(Vector2 screen, BldDef def)
-        {
-            if (_cam == null || _placer == null) return;
-            Vector3 w = _cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -_cam.transform.position.z));
-            var cell = new Vector2Int(Mathf.FloorToInt(w.x / CellSize), Mathf.FloorToInt(w.y / CellSize));
-            _placer.TryPlaceAt(cell, def.Category, def.Kind);
-        }
-
-        // ──────────────────────────────────────────────────────────
-        //  Ghost / pin
-        // ──────────────────────────────────────────────────────────
-
-        void UpdateGhost(Vector2 screen, CardSlot slot, bool pinMode)
-        {
-            if (_cam == null) return;
-            Vector3 w = _cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -_cam.transform.position.z));
-            var cell = new Vector2Int(Mathf.FloorToInt(w.x / CellSize), Mathf.FloorToInt(w.y / CellSize));
-            bool ok = _placer != null &&
-                      _placer.CheckPlacement(cell, slot.BldDef.Category, slot.BldDef.Kind) == PlaceResult.Ok;
-
-            _ghost.SetActive(true);
-            _ghost.transform.position = new Vector3((cell.x + 0.5f) * CellSize, (cell.y + 0.5f) * CellSize, -0.5f);
-
-            if (pinMode)
-            {
-                // Маленький яркий пин
-                _ghost.transform.localScale = Vector3.one * CellSize * 0.35f;
-                var d = slot.BldDef.Art;
-                _ghostMr.material.color = ok
-                    ? new Color(d.r/255f, d.g/255f, d.b/255f, 1f)
-                    : new Color(0.9f, 0.1f, 0.1f, 1f);
+                ToolRequested?.Invoke(slot.BldDef.PlaceTool);
             }
             else
             {
-                _ghost.transform.localScale = Vector3.one * CellSize * 0.9f;
-                var d = slot.BldDef.Art;
-                _ghostMr.material.color = ok
-                    ? new Color(d.r/255f, d.g/255f, d.b/255f, 0.55f)
-                    : new Color(1f, 0.15f, 0.15f, 0.45f);
+                HideAll();
+                ToolRequested?.Invoke(slot.ToolDef.Tool);
             }
         }
 
@@ -712,22 +594,27 @@ namespace CityGame.City
 
         bool IsOnCard(Vector2 screen, CardSlot slot)
         {
+            if (slot.Rt == null) return false;
             Vector2 local;
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_deckRoot, screen, null, out local)) return false;
-            float cy = (slot.Rt != null ? slot.Rt.anchoredPosition.y : slot.BaseY) + CardH * 0.5f;
-            return Mathf.Abs(local.x - slot.BaseX) < CardW * 0.52f && Mathf.Abs(local.y - cy) < CardH * 0.52f;
+            float cx = slot.Rt.anchoredPosition.x;
+            float cy = slot.Rt.anchoredPosition.y + CardH * 0.5f;
+            return Mathf.Abs(local.x - cx) < CardW * 0.55f && Mathf.Abs(local.y - cy) < CardH * 0.55f;
         }
 
         bool IsNearCard(Vector2 screen, CardSlot slot)
         {
+            if (slot.Rt == null) return false;
             Vector2 local;
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_deckRoot, screen, null, out local)) return false;
-            return Mathf.Abs(local.x - slot.BaseX) < CardW * 0.5f + 30f
-                && local.y > slot.BaseY - 20f && local.y < slot.BaseY + CardH + 48f;
+            float cx = slot.Rt.anchoredPosition.x;
+            float cy = slot.Rt.anchoredPosition.y;
+            return Mathf.Abs(local.x - cx) < CardW * 0.5f + 22f
+                && local.y > cy - 12f && local.y < cy + CardH + 36f;
         }
 
         // ──────────────────────────────────────────────────────────
-        //  Pointer input
+        //  Pointer helpers
         // ──────────────────────────────────────────────────────────
 
         static Vector2 GetPointerScreen()
@@ -742,18 +629,17 @@ namespace CityGame.City
         }
         static bool GetPointerHeld()
         {
-            if (Input.touchCount > 0) { var p = Input.GetTouch(0).phase; return p == TouchPhase.Stationary || p == TouchPhase.Moved; }
+            if (Input.touchCount > 0)
+            {
+                var p = Input.GetTouch(0).phase;
+                return p == TouchPhase.Stationary || p == TouchPhase.Moved;
+            }
             return Input.GetMouseButton(0);
         }
         static bool GetPointerUp()
         {
             if (Input.touchCount > 0) return Input.GetTouch(0).phase == TouchPhase.Ended;
             return Input.GetMouseButtonUp(0);
-        }
-
-        void OnDestroy()
-        {
-            if (_ghost != null) Destroy(_ghost);
         }
     }
 }
