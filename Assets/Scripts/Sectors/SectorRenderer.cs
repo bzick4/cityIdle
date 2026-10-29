@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using CityGame.Roads;
 using CityGame.Buildings;
+using DG.Tweening;
 using UnityEngine;
 
 namespace CityGame.Sectors
@@ -46,13 +47,13 @@ namespace CityGame.Sectors
         sealed class Drop
         {
             public HexCoord H;
-            public float Start;
             public GameObject Root;
             public readonly List<Material> Mats = new List<Material>();
             public readonly List<Color> Base = new List<Color>();
             public Mesh WaveMesh;
             public float[] WaveDistances;
             public float WaveMaxDistance;
+            public Sequence Seq;
         }
 
         readonly List<Drop> _drops = new List<Drop>();
@@ -111,70 +112,12 @@ namespace CityGame.Sectors
         public void BeginDrop(HexCoord h)
         {
             Dropping.Add(h);
-            _drops.Add(new Drop { H = h, Start = Time.time });
+            _drops.Add(new Drop { H = h });
         }
 
         TreeRenderer _trees;
 
-        void Update()
-        {
-            if (_drops.Count == 0) return;
-            bool finished = false;
-            for (int i = _drops.Count - 1; i >= 0; i--)
-            {
-                Drop d = _drops[i];
-                float elapsed = Time.time - d.Start;
-                float fallT = elapsed / Mathf.Max(0.05f, DropDuration);
-                if (fallT < 1f)
-                {
-                    ApplyDrop(d, fallT);
-                    continue;
-                }
 
-                ApplyDrop(d, 1f);
-                float waveT = (elapsed - DropDuration) / Mathf.Max(0.05f, GridWaveDuration);
-                ApplyGridWave(d, waveT);
-                if (waveT >= 1f)
-                {
-                    Dropping.Remove(d.H);
-                    DestroyDrop(d);
-                    _drops.RemoveAt(i);
-                    finished = true;
-                }
-            }
-
-            if (finished)
-            {
-                Redraw();
-                DropFinished?.Invoke();
-            }
-        }
-
-        /// <summary>Мягкое замедление к концу с едва заметным подскоком (easeOutBack).</summary>
-        float Ease(float t)
-        {
-            float c1 = DropSoftness * 1.2f;
-            float c3 = c1 + 1f;
-            float u = t - 1f;
-            return 1f + c3 * u * u * u + c1 * u * u;
-        }
-
-        void ApplyDrop(Drop d, float t)
-        {
-            if (d.Root == null) return;
-            float e = Ease(Mathf.Clamp01(t));
-            Vector2 c = HexMath.ToWorld(d.H, _map.HexSize);
-            d.Root.transform.position = new Vector3(c.x, c.y, 0f);
-            d.Root.transform.localScale = Vector3.one * Mathf.LerpUnclamped(Mathf.Max(1f, DropStartScale), 1f, e);
-            float a = Mathf.Clamp01(t / Mathf.Max(0.05f, DropFadeShare));
-            a = a * a * (3f - 2f * a);
-            for (int i = 0; i < d.Mats.Count; i++)
-            {
-                Color col = d.Base[i];
-                col.a *= a;
-                d.Mats[i].color = col;
-            }
-        }
 
         void ApplyGridWave(Drop d, float t)
         {
@@ -195,6 +138,8 @@ namespace CityGame.Sectors
 
         void DestroyDrop(Drop d)
         {
+            d.Seq?.Kill(false);
+            d.Seq = null;
             if (d.Root == null) return;
             foreach (MeshFilter f in d.Root.GetComponentsInChildren<MeshFilter>())
                 if (f.sharedMesh != null) UnityEngine.Object.Destroy(f.sharedMesh);
@@ -302,7 +247,50 @@ namespace CityGame.Sectors
                 }
             }
 
-            ApplyDrop(d, Mathf.Clamp01((Time.time - d.Start) / Mathf.Max(0.05f, DropDuration)));
+            // Начальное состояние: прозрачный, увеличенный
+            float startScale = Mathf.Max(1f, DropStartScale);
+            d.Root.transform.localScale = Vector3.one * startScale;
+            for (int mi = 0; mi < d.Mats.Count; mi++)
+            {
+                Color col0 = d.Base[mi];
+                col0.a = 0f;
+                d.Mats[mi].color = col0;
+            }
+
+            float fadeTime = DropDuration * Mathf.Max(0.05f, DropFadeShare);
+
+            d.Seq = DOTween.Sequence();
+
+            // Масштаб: startScale → 1, easeOutBack с настраиваемым overshoot
+            d.Seq.Insert(0f, d.Root.transform.DOScale(1f, DropDuration)
+                .SetEase(Ease.OutBack, DropSoftness * 1.2f));
+
+            // Проявление: smoothstep по alpha всех материалов
+            d.Seq.Insert(0f, DOTween.To(() => 0f, rawA =>
+            {
+                float a = rawA * rawA * (3f - 2f * rawA);
+                for (int mi = 0; mi < d.Mats.Count; mi++)
+                {
+                    Color col = d.Base[mi];
+                    col.a *= a;
+                    d.Mats[mi].color = col;
+                }
+            }, 1f, fadeTime).SetEase(Ease.Linear));
+
+            // Волна по сетке после завершения падения
+            d.Seq.Insert(DropDuration, DOTween.To(
+                () => 0f, waveT => ApplyGridWave(d, waveT), 1f, GridWaveDuration)
+                .SetEase(Ease.Linear));
+
+            Drop captured = d;
+            d.Seq.OnComplete(() =>
+            {
+                Dropping.Remove(captured.H);
+                _drops.Remove(captured);
+                DestroyDrop(captured);
+                Redraw();
+                DropFinished?.Invoke();
+            });
         }
 
         GameObject MakeGridWave(Drop drop, Vector2 origin)
