@@ -95,15 +95,16 @@ namespace CityGame.City
         //  Определения карточек
         // ──────────────────────────────────────────────────────────
 
-        enum CatAction { ShowRoads, ShowDistricts, ShowServices, ShowEnergy, ShowInfra, Erase }
+        enum CatAction { ShowRoads, ShowDistricts, ShowServices, ShowEnergy, Erase }
 
         struct CatDef  { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon; public CatAction Action; }
         struct ToolDef { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon; public Tool     Tool;    }
         struct BldDef  { public string Title, Sub; public Color32 ArtBg; public Texture2D Icon;
-                         public BuildingCategory Category; public ServiceKind Kind; public Tool PlaceTool; }
+                         public BuildingCategory Category; public ServiceKind Kind; public Tool PlaceTool;
+                         public bool DirectTool; } // если true — тап сразу активирует PlaceTool без здания
 
         CatDef[]  _catDefs;
-        ToolDef[] _roadDefs, _infraDefs;
+        ToolDef[] _roadDefs;
         BldDef[]  _distDefs, _servDefs, _enrgDefs;
 
         void InitDefs()
@@ -114,7 +115,6 @@ namespace CityGame.City
                 new CatDef { Title="РАЙОНЫ",  Sub="здания",  ArtBg=ART_DIST,  Icon=TexTool(Tool.Residential), Action=CatAction.ShowDistricts },
                 new CatDef { Title="СЛУЖБЫ",  Sub="сервисы", ArtBg=ART_SERV,  Icon=TexTool(Tool.Service),     Action=CatAction.ShowServices  },
                 new CatDef { Title="ЭНЕРГИЯ", Sub="питание", ArtBg=ART_ENRG,  Icon=TexService(ServiceKind.PowerPlant), Action=CatAction.ShowEnergy },
-                new CatDef { Title="ИНФРА",   Sub="сектора", ArtBg=ART_DIST,  Icon=TexTool(Tool.Expand),      Action=CatAction.ShowInfra     },
                 new CatDef { Title="СНЕСТИ",  Sub="убрать",  ArtBg=ART_ERASE, Icon=TexTool(Tool.Erase),       Action=CatAction.Erase         },
             };
             _roadDefs = new[]
@@ -134,6 +134,12 @@ namespace CityGame.City
                              Category=BuildingCategory.Commercial,  PlaceTool=Tool.Commercial  },
                 new BldDef { Title="Произв.",  Sub="завод",  ArtBg=ART_DIST,  Icon=TexTool(Tool.Industrial),
                              Category=BuildingCategory.Industrial,  PlaceTool=Tool.Industrial  },
+                new BldDef { Title="Расшир.",  Sub="сектор", ArtBg=ART_DIST,  Icon=TexTool(Tool.Expand),
+                             PlaceTool=Tool.Expand, DirectTool=true },
+                new BldDef { Title="Порт",     Sub="море",   ArtBg=ART_DIST,  Icon=TexTool(Tool.Port),
+                             PlaceTool=Tool.Port,   DirectTool=true },
+                new BldDef { Title="Автобус",  Sub="маршр.", ArtBg=ART_ENRG,  Icon=TexTool(Tool.Bus),
+                             PlaceTool=Tool.Bus,    DirectTool=true },
             };
             _servDefs = new[]
             {
@@ -155,12 +161,6 @@ namespace CityGame.City
                 new BldDef { Title="Водобашня", Sub="вода", ArtBg=ART_ENRG,
                              Icon=TexService(ServiceKind.WaterTower),
                              Category=BuildingCategory.Service, Kind=ServiceKind.WaterTower, PlaceTool=Tool.Service },
-            };
-            _infraDefs = new[]
-            {
-                new ToolDef { Title="Расшир.", Sub="сектор", ArtBg=ART_DIST,  Icon=TexTool(Tool.Expand), Tool=Tool.Expand },
-                new ToolDef { Title="Порт",    Sub="море",   ArtBg=ART_DIST,  Icon=TexTool(Tool.Port),   Tool=Tool.Port   },
-                new ToolDef { Title="Автобус", Sub="маршр.", ArtBg=ART_ENRG,  Icon=TexTool(Tool.Bus),    Tool=Tool.Bus    },
             };
         }
 
@@ -559,7 +559,6 @@ namespace CityGame.City
                     case CatAction.ShowDistricts:  ShowBuildings(_distDefs); break;
                     case CatAction.ShowServices:   ShowBuildings(_servDefs); break;
                     case CatAction.ShowEnergy:     ShowBuildings(_enrgDefs); break;
-                    case CatAction.ShowInfra:      ShowTools(_infraDefs);    break;
                     case CatAction.Erase:
                         HideAll(); ToolRequested?.Invoke(Tool.Erase); break;
                 }
@@ -569,7 +568,7 @@ namespace CityGame.City
             // SecondLevel
             if (slot.IsBldCard)
             {
-                if (slot.BldDef.Category == BuildingCategory.Service)
+                if (!slot.BldDef.DirectTool && slot.BldDef.Category == BuildingCategory.Service)
                     LastSelectedService = slot.BldDef.Kind;
                 HideAll();
                 ToolRequested?.Invoke(slot.BldDef.PlaceTool);
