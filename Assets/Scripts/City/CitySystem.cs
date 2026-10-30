@@ -490,7 +490,6 @@ namespace CityGame.Buildings
             BuildingTapper.CellSize = CellSize;
             BuildingTapper.Bind(Model);
             BuildingTapper.IsPointerBlocked = _hud.IsPointerBlocked;
-            BuildingTapper.Tapped += CardView.Show;
             BuildingTapper.enabled = false;
 
             CardDeck = GetOrAdd<BuildingCardDeck>();
