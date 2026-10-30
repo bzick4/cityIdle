@@ -135,6 +135,12 @@ namespace CityGame.Buildings
                     _toast = text;
                     _toastUntil = Time.unscaledTime + 1.8f;
                 };
+            if (_city.Events != null)
+                _city.Events.Message += text =>
+                {
+                    _toast = text;
+                    _toastUntil = Time.unscaledTime + 2.5f;
+                };
         }
 
         void OnDestroy()

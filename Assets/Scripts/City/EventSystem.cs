@@ -1,0 +1,125 @@
+using System;
+using System.Collections.Generic;
+using CityGame.Buildings;
+using UnityEngine;
+using Random = UnityEngine.Random;
+
+namespace CityGame.City
+{
+    public enum EventType { Fire = 0, Disease = 1, Crime = 2 }
+
+    public struct CityEvent
+    {
+        public EventType Type;
+        public Vector2Int Cell;
+        public float TimeLeft;
+    }
+
+    /// <summary>
+    /// Генерирует случайные события (пожар, болезнь, преступность).
+    /// Если нужная служба покрывает клетку — событие ликвидируется сразу.
+    /// Иначе — таймер UncoveredTimer секунд, затем здание уничтожается.
+    /// </summary>
+    public sealed class EventSystem : MonoBehaviour
+    {
+        public float MinInterval = 45f;
+        public float MaxInterval = 90f;
+        public float UncoveredTimer = 30f;
+
+        public event Action<string> Message;
+        public IReadOnlyList<CityEvent> Active => _active;
+
+        CityModel _model;
+        ServiceCoverage _coverage;
+        readonly List<CityEvent> _active = new List<CityEvent>();
+        float _nextIn = -1f;
+
+        public void Bind(CityModel model, ServiceCoverage coverage)
+        {
+            _model = model;
+            _coverage = coverage;
+            _nextIn = Random.Range(MinInterval, MaxInterval);
+        }
+
+        void Update()
+        {
+            if (_model == null) return;
+
+            _nextIn -= Time.deltaTime;
+            if (_nextIn <= 0f)
+            {
+                TrySpawnEvent();
+                _nextIn = Random.Range(MinInterval, MaxInterval);
+            }
+
+            for (int i = _active.Count - 1; i >= 0; i--)
+            {
+                var ev = _active[i];
+                if (IsCovered(ev.Cell, ev.Type))
+                {
+                    Message?.Invoke(EventName(ev.Type) + " ликвидирован");
+                    _active.RemoveAt(i);
+                    continue;
+                }
+                ev.TimeLeft -= Time.deltaTime;
+                _active[i] = ev;
+                if (ev.TimeLeft <= 0f)
+                {
+                    Message?.Invoke(EventName(ev.Type) + ": здание уничтожено");
+                    _model.Remove(ev.Cell);
+                    _active.RemoveAt(i);
+                }
+            }
+        }
+
+        void TrySpawnEvent()
+        {
+            var candidates = new List<BuildingCell>();
+            foreach (var c in _model.Cells)
+                if (c.Category != BuildingCategory.Service) candidates.Add(c);
+            if (candidates.Count == 0) return;
+
+            var target = candidates[Random.Range(0, candidates.Count)];
+            var type = (EventType)Random.Range(0, 3);
+
+            if (IsCovered(target.Pos, type))
+            {
+                Message?.Invoke(EventName(type) + " — службы справились");
+            }
+            else
+            {
+                _active.Add(new CityEvent { Type = type, Cell = target.Pos, TimeLeft = UncoveredTimer });
+                Message?.Invoke(EventName(type) + "! Нет нужной службы рядом");
+            }
+        }
+
+        bool IsCovered(Vector2Int cell, EventType type)
+        {
+            if (_coverage == null) return false;
+            int bit = 1 << (int)ServiceFor(type);
+            return (_coverage.MaskAt(cell) & bit) != 0;
+        }
+
+        static ServiceKind ServiceFor(EventType t)
+        {
+            switch (t)
+            {
+                case EventType.Fire:    return ServiceKind.Fire;
+                case EventType.Disease: return ServiceKind.Ambulance;
+                case EventType.Crime:   return ServiceKind.Police;
+                default:                return ServiceKind.Fire;
+            }
+        }
+
+        static string EventName(EventType t)
+        {
+            switch (t)
+            {
+                case EventType.Fire:    return "Пожар";
+                case EventType.Disease: return "Эпидемия";
+                case EventType.Crime:   return "Преступность";
+                default:                return "Событие";
+            }
+        }
+    }
+}

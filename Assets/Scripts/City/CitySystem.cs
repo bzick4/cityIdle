@@ -102,6 +102,7 @@ namespace CityGame.Buildings
         public Tool CurrentTool { get; private set; } = Tool.Pan;
         public CityTutorial Tutorial => _tutorial;
         public CityDebugHud Hud => _hud;
+        public EventSystem Events { get; private set; }
 
         [Tooltip("Как часто сохранять город, секунд")]
         public float AutosaveSeconds = 20f;
@@ -501,6 +502,12 @@ namespace CityGame.Buildings
                 if (tool == Tool.Junction) JunctionTool.AutoType = CardDeck.LastSelectedJunctionType;
                 Select(tool);
             };
+
+            Events = GetOrAdd<EventSystem>();
+            Events.Bind(Model, Coverage);
+            var evRenderer = GetOrAdd<EventRenderer>();
+            evRenderer.CellSize = CellSize;
+            evRenderer.Bind(Events);
 
             Started = true;
             if (data != null) Apply(data);
