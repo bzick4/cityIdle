@@ -568,15 +568,14 @@ namespace CityGame.City
                 }
             }
 
-            // Нажатие
+            // Нажатие: активируется только та карта, что уже поднята hover-логикой
             if (down && _held == null)
             {
-                foreach (var s in _active)
+                var target = _active.Find(s => s.Lifted);
+                if (target != null)
                 {
-                    if (!IsOnCard(pos, s)) continue;
-                    _held = s; _pressPos = pos;
-                    s.AnimateTo(s.BaseX, s.BaseY + LiftY * 1.4f, 0f, 0.07f);
-                    break;
+                    _held = target; _pressPos = pos;
+                    target.AnimateTo(target.BaseX, target.BaseY + LiftY * 1.4f, 0f, 0.07f);
                 }
             }
 
