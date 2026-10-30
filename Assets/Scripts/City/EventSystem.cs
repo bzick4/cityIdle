@@ -76,14 +76,16 @@ namespace CityGame.City
             }
         }
 
+        readonly List<BuildingCell> _candidates = new List<BuildingCell>();
+
         void TrySpawnEvent()
         {
-            var candidates = new List<BuildingCell>();
+            _candidates.Clear();
             foreach (var c in _model.Cells)
-                if (c.Category != BuildingCategory.Service) candidates.Add(c);
-            if (candidates.Count == 0) return;
+                if (c.Category != BuildingCategory.Service) _candidates.Add(c);
+            if (_candidates.Count == 0) return;
 
-            var target = candidates[Random.Range(0, candidates.Count)];
+            var target = _candidates[Random.Range(0, _candidates.Count)];
             var type = (EventType)Random.Range(0, 3);
 
             if (IsCovered(target.Pos, type))

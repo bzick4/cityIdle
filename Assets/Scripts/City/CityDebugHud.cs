@@ -33,6 +33,9 @@ namespace CityGame.Buildings
         Popup _popup = Popup.None;
         ToolPage _toolPage = ToolPage.Home;
         string _toast = "";
+        string _moneyBar = "";
+        float _cachedMoney = float.NaN;
+        float _cachedIncome = float.NaN;
         float _toastUntil;
         Rect _barRect;
         Rect _popupRect;
@@ -99,52 +102,35 @@ namespace CityGame.Buildings
         public void Bind(CitySystem city)
         {
             _city = city;
-            _city.Economy.Spent += () => { if (ExitAfterBuild) _exitPending = true; };
-            _city.Placer.Message += text =>
-            {
-                _toast = text;
-                _toastUntil = Time.unscaledTime + 1.5f;
-            };
-            if (_city.JunctionTool != null)
-                _city.JunctionTool.Message += text =>
-                {
-                    _toast = text;
-                    _toastUntil = Time.unscaledTime + 1.8f;
-                };
-            if (_city.CanalTool != null)
-                _city.CanalTool.Message += text =>
-                {
-                    _toast = text;
-                    _toastUntil = Time.unscaledTime + 1.8f;
-                };
-            if (_city.PortTool != null)
-                _city.PortTool.Message += text =>
-                {
-                    _toast = text;
-                    _toastUntil = Time.unscaledTime + 1.8f;
-                };
-            if (_city.BusTool != null)
-                _city.BusTool.Message += text =>
-                {
-                    _toast = text;
-                    _toastUntil = Time.unscaledTime + 1.8f;
-                };
-            if (_city.HighwayTool != null)
-                _city.HighwayTool.Message += text =>
-                {
-                    _toast = text;
-                    _toastUntil = Time.unscaledTime + 1.8f;
-                };
-            if (_city.Events != null)
-                _city.Events.Message += text =>
-                {
-                    _toast = text;
-                    _toastUntil = Time.unscaledTime + 2.5f;
-                };
+            _city.Economy.Spent += OnEconomySpent;
+            _city.Placer.Message += OnPlacerMsg;
+            if (_city.JunctionTool != null) _city.JunctionTool.Message += OnToolMsg;
+            if (_city.CanalTool != null) _city.CanalTool.Message += OnToolMsg;
+            if (_city.PortTool != null) _city.PortTool.Message += OnToolMsg;
+            if (_city.BusTool != null) _city.BusTool.Message += OnToolMsg;
+            if (_city.HighwayTool != null) _city.HighwayTool.Message += OnToolMsg;
+            if (_city.Events != null) _city.Events.Message += OnEventMsg;
         }
+
+        void OnEconomySpent() { if (ExitAfterBuild) _exitPending = true; }
+        void OnPlacerMsg(string t) => ShowToast(t, 1.5f);
+        void OnToolMsg(string t) => ShowToast(t, 1.8f);
+        void OnEventMsg(string t) => ShowToast(t, 2.5f);
+        void ShowToast(string t, float dur) { _toast = t; _toastUntil = Time.unscaledTime + dur; }
 
         void OnDestroy()
         {
+            if (_city != null)
+            {
+                _city.Economy.Spent -= OnEconomySpent;
+                _city.Placer.Message -= OnPlacerMsg;
+                if (_city.JunctionTool != null) _city.JunctionTool.Message -= OnToolMsg;
+                if (_city.CanalTool != null) _city.CanalTool.Message -= OnToolMsg;
+                if (_city.PortTool != null) _city.PortTool.Message -= OnToolMsg;
+                if (_city.BusTool != null) _city.BusTool.Message -= OnToolMsg;
+                if (_city.HighwayTool != null) _city.HighwayTool.Message -= OnToolMsg;
+                if (_city.Events != null) _city.Events.Message -= OnEventMsg;
+            }
             if (_pillTex != null) Destroy(_pillTex);
             if (_circleTex != null) Destroy(_circleTex);
             if (_panelTex != null) Destroy(_panelTex);
@@ -161,21 +147,33 @@ namespace CityGame.Buildings
             foreach (Texture2D t in icons) if (t != null) Destroy(t);
         }
 
-        void Update()
+        void Start()
         {
-            // Выход делаем здесь, а не в момент траты: инструмент ещё мог дорисовывать штрих.
-            if (_exitPending)
+            StartCoroutine(ExitPendingLoop());
+            StartCoroutine(ExitRequestedLoop());
+        }
+
+        System.Collections.IEnumerator ExitPendingLoop()
+        {
+            while (true)
             {
+                yield return null;
+                if (!_exitPending) continue;
                 _exitPending = false;
-                // Панель могла закрыться ещё при выборе инструмента, поэтому сбрасываем режим всегда.
                 ResetBuildMode();
                 if (_popup == Popup.Tools) _popup = Popup.None;
             }
+        }
 
-            // Выход в меню разрушает этот объект, поэтому делаем его вне OnGUI.
-            if (!_exitRequested) return;
-            _exitRequested = false;
-            _city.ExitToMenu();
+        System.Collections.IEnumerator ExitRequestedLoop()
+        {
+            while (true)
+            {
+                yield return null;
+                if (!_exitRequested) continue;
+                _exitRequested = false;
+                _city.ExitToMenu();
+            }
         }
 
         float Scale => Mathf.Max(0.5f, Mathf.Min(Screen.width / RefWidth, Screen.height / RefHeight));
@@ -378,8 +376,13 @@ namespace CityGame.Buildings
             // Полоска, справа бюджет и инструмент.
             Draw(_barRect, _pill, _barColor);
             var textRect = new Rect(margin + barH + 4f, barY + 6f, w - 2f * margin - barH - 24f, barH - 12f);
-            GUI.Label(new Rect(textRect.x, textRect.y, textRect.width, 28f),
-                string.Format("{0:0} $   +{1:0.0}/с", _city.Economy.Money, _city.Economy.IncomePerSecond), _lblBig);
+            if (_city.Economy.Money != _cachedMoney || _city.Economy.IncomePerSecond != _cachedIncome)
+            {
+                _cachedMoney = _city.Economy.Money;
+                _cachedIncome = _city.Economy.IncomePerSecond;
+                _moneyBar = string.Format("{0:0} $   +{1:0.0}/с", _cachedMoney, _cachedIncome);
+            }
+            GUI.Label(new Rect(textRect.x, textRect.y, textRect.width, 28f), _moneyBar, _lblBig);
             string tool = Names[(int)_city.CurrentTool];
             if (_city.CurrentTool == Tool.Service) tool += ": " + ServiceSpecs.Title(_city.CurrentService);
             GUI.Label(new Rect(textRect.x, textRect.y + 26f, textRect.width, 20f),

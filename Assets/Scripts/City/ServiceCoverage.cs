@@ -25,6 +25,11 @@ namespace CityGame.Buildings
             Recompute();
         }
 
+        public void Dispose()
+        {
+            _model.Rebuilt -= Recompute;
+        }
+
         public int MaskAt(Vector2Int cell)
         {
             _mask.TryGetValue(cell, out int m);

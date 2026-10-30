@@ -93,6 +93,8 @@ namespace CityGame.Cars
         readonly List<Car> _cars = new List<Car>();
         readonly Dictionary<long, List<Car>> _lanes = new Dictionary<long, List<Car>>();
         readonly Stack<List<Car>> _pool = new Stack<List<Car>>();
+        readonly List<BuildingCell> _fleetResidents = new List<BuildingCell>();
+        readonly List<Vector2Int> _fleetHomes = new List<Vector2Int>();
         readonly Dictionary<long, float> _edgeNext = new Dictionary<long, float>();
         readonly Dictionary<int, float> _nodeNext = new Dictionary<int, float>();
         readonly MeshBatch _lowBatch = new MeshBatch();
@@ -173,12 +175,14 @@ namespace CityGame.Cars
         /// <summary>Пересчитывает парк по жилым блокам в порядке постройки.</summary>
         void SyncFleet()
         {
-            var residents = new List<BuildingCell>();
+            _fleetResidents.Clear();
             foreach (BuildingCell c in _model.Cells)
-                if (c.Category == BuildingCategory.Residential) residents.Add(c);
-            residents.Sort((a, b) => a.Serial.CompareTo(b.Serial));
+                if (c.Category == BuildingCategory.Residential) _fleetResidents.Add(c);
+            _fleetResidents.Sort((a, b) => a.Serial.CompareTo(b.Serial));
+            var residents = _fleetResidents;
 
-            var homes = new List<Vector2Int>();
+            _fleetHomes.Clear();
+            var homes = _fleetHomes;
             float sum = 0f;
             for (int i = 0; i < residents.Count; i++)
             {

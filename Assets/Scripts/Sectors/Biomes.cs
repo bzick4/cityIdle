@@ -49,6 +49,14 @@ namespace CityGame.Sectors
             Recompute();
         }
 
+        public void Dispose()
+        {
+            _sectors.Changed -= Recompute;
+            _model.Rebuilt -= Recompute;
+            _roads.Changed -= Recompute;
+            if (Canals != null) Canals.Changed -= Recompute;
+        }
+
         Vector2 CenterOf(Vector2Int c)
         {
             return new Vector2((c.x + 0.5f) * _cell, (c.y + 0.5f) * _cell);
