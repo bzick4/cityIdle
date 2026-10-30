@@ -15,7 +15,7 @@ namespace CityGame.Roads
     {
         [Header("Камера (если пусто, берётся Camera.main)")]
         [SerializeField] Camera _cam;
-        public Camera _cam => _cam;
+        public Camera Cam => _cam;
 
         [Header("Что рисуем")]
         [SerializeField] RoadType _type = RoadType.Local;

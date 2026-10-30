@@ -11,7 +11,7 @@ namespace CityGame.Sectors
     public sealed class SectorTapper : MonoBehaviour
     {
         [SerializeField] Camera _cam;
-        public Camera _cam => _cam;
+        public Camera Cam => _cam;
         public Func<Vector2, bool> IsPointerBlocked;
 
         SectorMap _map;
