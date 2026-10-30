@@ -61,13 +61,14 @@ namespace CityGame.Buildings
         CityModel _model;
         ServiceCoverage _coverage;
         Biomes _biomes;
-        float _timer;
 
         public void Bind(CityModel model, ServiceCoverage coverage = null, Biomes biomes = null)
         {
             _model = model;
             _coverage = coverage;
             _biomes = biomes;
+            StopAllCoroutines();
+            StartCoroutine(TickLoop());
         }
 
         /// <summary>Цена здания в клетке: биом снега и пустыни даёт скидку.</summary>
@@ -151,13 +152,12 @@ namespace CityGame.Buildings
             return IncomePerCell[(int)d.Category] * d.Multiplier * SatisfactionFactor(d) * (1f + bonus) * served;
         }
 
-        void Update()
+        System.Collections.IEnumerator TickLoop()
         {
-            if (_model == null) return;
-            _timer += Time.deltaTime;
-            while (_timer >= TickSeconds)
+            var wait = new WaitForSeconds(TickSeconds);
+            while (true)
             {
-                _timer -= TickSeconds;
+                yield return wait;
                 Tick();
             }
         }

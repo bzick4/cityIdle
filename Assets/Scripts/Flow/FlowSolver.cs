@@ -92,6 +92,7 @@ namespace CityGame.Flow
         RoadGraph _graph;
         CityModel _model;
         bool _dirty = true;
+        bool _pending;
 
         struct Link
         {
@@ -133,7 +134,7 @@ namespace CityGame.Flow
             _model = model;
             _graph.Changed += MarkDirty;
             _model.Rebuilt += MarkDirty;
-            _dirty = true;
+            MarkDirty();
         }
 
         void Unbind()
@@ -150,11 +151,16 @@ namespace CityGame.Flow
         void MarkDirty()
         {
             _dirty = true;
+            if (_pending) return;
+            _pending = true;
+            StartCoroutine(SolveLater());
         }
 
-        void Update()
+        System.Collections.IEnumerator SolveLater()
         {
-            if (!_dirty || _graph == null || _model == null) return;
+            yield return null;
+            _pending = false;
+            if (_graph == null || _model == null) yield break;
             _dirty = false;
             Solve();
         }

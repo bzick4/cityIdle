@@ -118,7 +118,6 @@ namespace CityGame.Buildings
         SectorRenderer _sectorRenderer;
         readonly List<Component> _added = new List<Component>();
         int _baseChildren;
-        float _saveTimer;
 
         void Start()
         {
@@ -198,7 +197,6 @@ namespace CityGame.Buildings
         {
             if (!Started) return;
             SaveSystem.Write(Capture());
-            _saveTimer = 0f;
         }
 
         SaveData Capture()
@@ -300,11 +298,9 @@ namespace CityGame.Buildings
             if (data.camWidth > 0f) Rig.SetView(new Vector2(data.camX, data.camY), data.camWidth);
         }
 
-        void Update()
+        void AutoSave()
         {
-            if (!Started) return;
-            _saveTimer += Time.unscaledDeltaTime;
-            if (_saveTimer >= AutosaveSeconds) Save();
+            if (Started) Save();
         }
 
         void OnApplicationPause(bool paused)
@@ -510,6 +506,7 @@ namespace CityGame.Buildings
             evRenderer.Bind(Events);
 
             Started = true;
+            InvokeRepeating(nameof(AutoSave), AutosaveSeconds, AutosaveSeconds);
             if (data != null) Apply(data);
             else Rig.SetStartView(Vector2.zero, HexSize, InitialNeighborVisibleFraction);
 

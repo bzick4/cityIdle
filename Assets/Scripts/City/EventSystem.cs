@@ -32,42 +32,51 @@ namespace CityGame.City
         CityModel _model;
         ServiceCoverage _coverage;
         readonly List<CityEvent> _active = new List<CityEvent>();
-        float _nextIn = -1f;
+
+        const float CheckInterval = 0.5f;
 
         public void Bind(CityModel model, ServiceCoverage coverage)
         {
             _model = model;
             _coverage = coverage;
-            _nextIn = Random.Range(MinInterval, MaxInterval);
+            StopAllCoroutines();
+            StartCoroutine(SpawnLoop());
+            StartCoroutine(CheckLoop());
         }
 
-        void Update()
+        System.Collections.IEnumerator SpawnLoop()
         {
-            if (_model == null) return;
-
-            _nextIn -= Time.deltaTime;
-            if (_nextIn <= 0f)
+            while (true)
             {
-                TrySpawnEvent();
-                _nextIn = Random.Range(MinInterval, MaxInterval);
+                yield return new WaitForSeconds(Random.Range(MinInterval, MaxInterval));
+                if (_model != null) TrySpawnEvent();
             }
+        }
 
-            for (int i = _active.Count - 1; i >= 0; i--)
+        System.Collections.IEnumerator CheckLoop()
+        {
+            var wait = new WaitForSeconds(CheckInterval);
+            while (true)
             {
-                var ev = _active[i];
-                if (IsCovered(ev.Cell, ev.Type))
+                yield return wait;
+                if (_model == null) continue;
+                for (int i = _active.Count - 1; i >= 0; i--)
                 {
-                    Message?.Invoke(EventName(ev.Type) + " ликвидирован");
-                    _active.RemoveAt(i);
-                    continue;
-                }
-                ev.TimeLeft -= Time.deltaTime;
-                _active[i] = ev;
-                if (ev.TimeLeft <= 0f)
-                {
-                    Message?.Invoke(EventName(ev.Type) + ": здание уничтожено");
-                    _model.Remove(ev.Cell);
-                    _active.RemoveAt(i);
+                    var ev = _active[i];
+                    if (IsCovered(ev.Cell, ev.Type))
+                    {
+                        Message?.Invoke(EventName(ev.Type) + " ликвидирован");
+                        _active.RemoveAt(i);
+                        continue;
+                    }
+                    ev.TimeLeft -= CheckInterval;
+                    _active[i] = ev;
+                    if (ev.TimeLeft <= 0f)
+                    {
+                        Message?.Invoke(EventName(ev.Type) + ": здание уничтожено");
+                        _model.Remove(ev.Cell);
+                        _active.RemoveAt(i);
+                    }
                 }
             }
         }
