@@ -316,10 +316,24 @@ namespace CityGame.City
                     return back;
                 }
                 var d = defs[i - 1];
+                string toolSub = ToolSubLabel(d.Tool);
                 var s = new CardSlot { ToolDef = d };
-                s.Rt = CreateCard(d.Title, d.Sub, d.ArtBg, d.Icon);
+                s.Rt = CreateCard(d.Title, toolSub, d.ArtBg, d.Icon);
                 return s;
             });
+        }
+
+        string ToolSubLabel(Tool tool)
+        {
+            if (_economy == null) return "";
+            return tool switch
+            {
+                Tool.Road    => _economy.RoadCostPerCell.ToString("0") + " $/кл",
+                Tool.Highway => _economy.HighwayCostPerCell.ToString("0") + " $/кл",
+                Tool.OneWay  => _economy.RoadCostPerCell.ToString("0") + " $/кл",
+                Tool.Canal   => _economy.CanalCostPerCell.ToString("0") + " $/кл",
+                _            => "",
+            };
         }
 
         void ShowBuildings(BldDef[] defs)
