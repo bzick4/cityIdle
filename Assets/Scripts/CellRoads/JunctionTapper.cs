@@ -15,7 +15,7 @@ namespace CityGame.CellRoads
     public sealed class JunctionTapper : MonoBehaviour
     {
         public Camera Cam;
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         public Func<Vector2, bool> IsPointerBlocked;
 
         /// <summary>Показать сообщение игроку.</summary>

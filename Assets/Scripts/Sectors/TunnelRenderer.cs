@@ -12,12 +12,12 @@ namespace CityGame.Sectors
     /// </summary>
     public sealed class TunnelRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         [Tooltip("Ширина гребня над тоннелем, доля клетки")]
-        public float RidgeWidth = 0.8f;
+        [SerializeField] float _ridgeWidth = 0.8f;
         [Tooltip("Длина открытого участка у портала, доля клетки")]
-        public float PortalGap = 0.3f;
-        public int SortingOrder = 17;
+        [SerializeField] float _portalGap = 0.3f;
+        [SerializeField] int _sortingOrder = 17;
 
         CellRoadMap _map;
         Biomes _biomes;
@@ -66,8 +66,8 @@ namespace CityGame.Sectors
             if (_map == null) return;
             _batch.Clear();
             float cs = CellSize;
-            float hw = cs * RidgeWidth * 0.5f;
-            float gap = cs * PortalGap;
+            float hw = cs * _ridgeWidth * 0.5f;
+            float gap = cs * _portalGap;
             Vector2 so = new Vector2(0.04f, -0.06f) * cs;
 
             for (int pass = 0; pass < 3; pass++)
@@ -132,7 +132,7 @@ namespace CityGame.Sectors
                 _material = new Material(Shader.Find("Sprites/Default")) { color = Color.white };
                 var mr = _view.AddComponent<MeshRenderer>();
                 mr.sharedMaterial = _material;
-                mr.sortingOrder = SortingOrder;
+                mr.sortingOrder = _sortingOrder;
             }
 
             var f = _view.GetComponent<MeshFilter>();

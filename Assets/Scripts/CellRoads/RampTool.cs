@@ -12,7 +12,7 @@ namespace CityGame.CellRoads
     /// </summary>
     public sealed class RampTool : MonoBehaviour, IRoadStroke
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         public Func<Vector2, bool> IsPointerBlocked;
 
         public RampMap Ramps { get; private set; }

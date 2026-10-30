@@ -8,7 +8,7 @@ namespace CityGame.Flow
 {
     /// <summary>
     /// Расчёт потоков по графу дорог.
-    /// 1. Каждый район подключается к ближайшей земной дороге в радиусе AccessRadius.
+    /// 1. Каждый район подключается к ближайшей земной дороге в радиусе _accessRadius.
     /// 2. Жилые районы создают поездки в торговые (магазины) и промышленные (работа), по гравитационной модели.
     /// 3. Поездки раскладываются по кратчайшим путям (Dijkstra), время ребра растёт по BPR: t = t0 (1 + 0.15 (v/c)^4).
     ///    Несколько итераций со средним по MSA, чтобы потоки стабилизировались.
@@ -19,26 +19,26 @@ namespace CityGame.Flow
     public sealed class FlowSolver : MonoBehaviour
     {
         [Header("Дороги (единицы мира в секунду, поездок на ребро)")]
-        public float LocalSpeed = 2f;
-        public float HighwaySpeed = 5f;
-        public float LocalCapacity = 15f;
-        public float HighwayCapacity = 60f;
+        [SerializeField] float _localSpeed = 2f;
+        [SerializeField] float _highwaySpeed = 5f;
+        [SerializeField] float _localCapacity = 15f;
+        [SerializeField] float _highwayCapacity = 60f;
 
         [Header("Спрос")]
-        public float TripsPerCell = 3f;
-        [Range(0f, 1f)] public float ShopShare = 0.5f;
+        [SerializeField] float _tripsPerCell = 3f;
+        [SerializeField] [Range(0f, 1f)] float _shopShare = 0.5f;
         [Tooltip("Чем меньше, тем сильнее жители предпочитают ближние цели, секунд")]
-        public float GravityTau = 15f;
+        [SerializeField] float _gravityTau = 15f;
 
         [Header("Подключение района к дороге")]
-        public float AccessRadius = 1.2f;
+        [SerializeField] float _accessRadius = 1.2f;
 
         [Header("Довольство: время в пути, секунд")]
-        public float GoodTime = 6f;
-        public float BadTime = 40f;
+        [SerializeField] float _goodTime = 6f;
+        [SerializeField] float _badTime = 40f;
 
         [Header("Расчёт")]
-        public int Iterations = 4;
+        [SerializeField] int _iterations = 4;
 
         /// <summary>Загрузка v/c по id ребра. Только рёбра с ненулевым потоком.</summary>
         public readonly Dictionary<int, float> EdgeRatio = new Dictionary<int, float>();
@@ -73,12 +73,12 @@ namespace CityGame.Flow
 
         public float EdgeSpeed(RoadEdge e)
         {
-            return (e.Type == RoadType.Highway ? HighwaySpeed : LocalSpeed) * e.SpeedFactor;
+            return (e.Type == RoadType.Highway ? _highwaySpeed : _localSpeed) * e.SpeedFactor;
         }
 
         public float EdgeCapacity(RoadEdge e)
         {
-            return (e.Type == RoadType.Highway ? HighwayCapacity : LocalCapacity) * e.CapacityFactor;
+            return (e.Type == RoadType.Highway ? _highwayCapacity : _localCapacity) * e.CapacityFactor;
         }
 
         public int ConnectedDistricts { get; private set; }
@@ -167,7 +167,7 @@ namespace CityGame.Flow
 
         public float TimeScore(float seconds)
         {
-            return Mathf.Clamp01(1f - (seconds - GoodTime) / Mathf.Max(0.01f, BadTime - GoodTime));
+            return Mathf.Clamp01(1f - (seconds - _goodTime) / Mathf.Max(0.01f, _badTime - _goodTime));
         }
 
         // ---------------------------------------------------------------
@@ -243,7 +243,7 @@ namespace CityGame.Flow
                 districtNode[ac.DistrictIndex] = node;
                 int ei = edgeIndexById[ac.Edge.Id];
                 float speed = EdgeSpeed(ac.Edge);
-                float offT = ac.Offset / LocalSpeed;
+                float offT = ac.Offset / _localSpeed;
                 float toA = ac.Along / speed + offT;
                 float toB = (ac.Edge.Length - ac.Along) / speed + offT;
                 int a = nodeIndex[ac.Edge.NodeA];
@@ -262,7 +262,7 @@ namespace CityGame.Flow
                 {
                     Access other = accesses[m];
                     if (other.Edge.Id != ac.Edge.Id) continue;
-                    float tt = Mathf.Abs(ac.Along - other.Along) / speed + offT + other.Offset / LocalSpeed;
+                    float tt = Mathf.Abs(ac.Along - other.Along) / speed + offT + other.Offset / _localSpeed;
                     // Вперёд по ребру едут от меньшего Along к большему.
                     bool newIsAhead = ac.Along >= other.Along;
                     if (ow == 0 || (ow > 0) == newIsAhead) AddOne(links, roadNodes + m, node, ei, tt);
@@ -312,15 +312,15 @@ namespace CityGame.Flow
             foreach (int o in origins)
             {
                 Dijkstra(links, districtNode[o], edgeT, nodeT, dist, predNode, predEdge);
-                float demand = districts[o].Count * TripsPerCell;
-                AddDemand(od, o, comList, demand * ShopShare, districts, districtNode, dist);
-                AddDemand(od, o, indList, demand * (1f - ShopShare), districts, districtNode, dist);
+                float demand = districts[o].Count * _tripsPerCell;
+                AddDemand(od, o, comList, demand * _shopShare, districts, districtNode, dist);
+                AddDemand(od, o, indList, demand * (1f - _shopShare), districts, districtNode, dist);
             }
 
             // Назначение потоков: MSA.
             var v = new float[edges.Count];
             var y = new float[edges.Count];
-            int iterations = Mathf.Max(1, Iterations);
+            int iterations = Mathf.Max(1, _iterations);
             for (int k = 1; k <= iterations; k++)
             {
                 for (int i = 0; i < edgeT.Length; i++) edgeT[i] = Bpr(t0[i], v[i], cap[i]);
@@ -609,7 +609,7 @@ namespace CityGame.Flow
             foreach (BuildingCell c in d.Cells)
             {
                 Vector2 center = new Vector2(c.Pos.x + 0.5f, c.Pos.y + 0.5f) * CellSizeScale;
-                if (!_graph.FindEdgeNear(center, AccessRadius, RoadLayer.Ground,
+                if (!_graph.FindEdgeNear(center, _accessRadius, RoadLayer.Ground,
                         out RoadEdge edge, out int seg, out Vector2 closest)) continue;
 
                 float dist = Vector2.Distance(center, closest);
@@ -634,7 +634,7 @@ namespace CityGame.Flow
         }
 
         /// <summary>Размер клетки сетки зданий. Задаёт CitySystem.</summary>
-        [HideInInspector] public float CellSizeScale = 1f;
+        public float CellSizeScale { get; set; } = 1f;
 
         void AddDemand(List<(int src, int dst, float flow)> od, int origin, List<int> dests, float demand,
             IReadOnlyList<District> districts, Dictionary<int, int> districtNode, float[] dist)
@@ -647,7 +647,7 @@ namespace CityGame.Flow
             {
                 float t = dist[districtNode[dests[i]]];
                 if (float.IsInfinity(t) || t >= float.MaxValue) continue;
-                w[i] = districts[dests[i]].Count * Mathf.Exp(-t / Mathf.Max(0.01f, GravityTau));
+                w[i] = districts[dests[i]].Count * Mathf.Exp(-t / Mathf.Max(0.01f, _gravityTau));
                 sum += w[i];
             }
 

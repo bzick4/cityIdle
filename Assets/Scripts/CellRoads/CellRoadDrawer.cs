@@ -15,11 +15,11 @@ namespace CityGame.CellRoads
     public sealed class CellRoadDrawer : MonoBehaviour, IRoadStroke
     {
         public Camera Cam;
-        public float CellSize = 1f;
-        [Range(0.2f, 0.9f)] public float WidthFraction = 0.5f;
+        public float CellSize { get; set; } = 1f;
+        [Range(0.2f, 0.9f)] [SerializeField] float _widthFraction = 0.5f;
 
         [Tooltip("Насколько дальше в сторону нужно увести палец, чтобы дорога повернула, в клетках")]
-        public int TurnThreshold = 2;
+        [SerializeField] int _turnThreshold = 2;
 
         public Func<Vector2, bool> IsPointerBlocked;
 
@@ -38,7 +38,7 @@ namespace CityGame.CellRoads
         public IReadOnlyList<Vector2Int> Path => _path;
         public float Money => _economy != null ? _economy.Money : 0f;
         public float StrokeCost => PathCost();
-        public float StrokeWidth => WidthFraction;
+        public float StrokeWidth => _widthFraction;
         Camera IRoadStroke.Cam => Cam;
         bool _pending;
 
@@ -209,7 +209,7 @@ namespace CityGame.CellRoads
 
                 // Поворот: палец ушёл вбок заметно дальше, чем вперёд (или вперёд уже нечего идти).
                 bool turn = across != 0 && (along == 0 ||
-                                            (Mathf.Abs(across) >= TurnThreshold && Mathf.Abs(across) > Mathf.Abs(along)));
+                                            (Mathf.Abs(across) >= _turnThreshold && Mathf.Abs(across) > Mathf.Abs(along)));
                 if (turn)
                 {
                     _axisHorizontal = !_axisHorizontal;
@@ -280,7 +280,7 @@ namespace CityGame.CellRoads
             _preview = new GameObject("RoadPreview");
             _preview.transform.SetParent(transform, false);
             _preview.AddComponent<MeshFilter>().sharedMesh =
-                RoadCellMesher.Build(masks, null, null, CellSize, WidthFraction).ToMesh(RoadLayers.Road);
+                RoadCellMesher.Build(masks, null, null, CellSize, _widthFraction).ToMesh(RoadLayers.Road);
             var r = _preview.AddComponent<MeshRenderer>();
             r.sharedMaterial = _previewMaterial;
             r.sortingOrder = 16;

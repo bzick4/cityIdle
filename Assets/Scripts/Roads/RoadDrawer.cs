@@ -14,37 +14,38 @@ namespace CityGame.Roads
     public sealed class RoadDrawer : MonoBehaviour, IRoadStroke
     {
         [Header("Камера (если пусто, берётся Camera.main)")]
-        public Camera Cam;
+        [SerializeField] Camera _cam;
+        public Camera _cam => _cam;
 
         [Header("Что рисуем")]
-        public RoadType Type = RoadType.Local;
-        public bool OneWayMode;
+        [SerializeField] RoadType _type = RoadType.Local;
+        public bool OneWayMode { get; set; }
 
         [Header("Параметры (мировые единицы)")]
-        public float SnapRadius    = 0.6f;
-        public float MinRoadLength = 0.8f;
+        [SerializeField] float _snapRadius = 0.6f;
+        [SerializeField] float _minRoadLength = 0.8f;
 
         // Оставлены для совместимости с Inspector, больше не используются.
-        public float MinPointDistance = 0.2f;
-        public float SimplifyEpsilon  = 0.12f;
-        public float SmoothSpacing    = 0.25f;
+        [SerializeField] float _minPointDistance = 0.2f;
+        [SerializeField] float _simplifyEpsilon = 0.12f;
+        [SerializeField] float _smoothSpacing = 0.25f;
 
-        public Func<Vector2, bool>  IsPointerBlocked;
-        public Func<Vector2, bool>  CanBuildAt;
-        public Economy              Economy;
-        public Func<Vector2, float> CostFactorAt;
+        public Func<Vector2, bool> IsPointerBlocked { get; set; }
+        public Func<Vector2, bool> CanBuildAt { get; set; }
+        public Economy Economy { get; set; }
+        public Func<Vector2, float> CostFactorAt { get; set; }
 
         // ——— IRoadStroke ———
         public bool                        Drawing     => _drawing;
         public bool                        Pending     => _pending;
-        public string                      Title       => Type == RoadType.Highway ? "Шоссе" : OneWayMode ? "Односторонняя" : "Дорога";
+        public string                      Title       => _type == RoadType.Highway ? "Шоссе" : OneWayMode ? "Односторонняя" : "Дорога";
         public string                      Problem     => null;
         public IReadOnlyList<Vector2Int>   Path        => _emptyPath;
         public float                       Money       => Economy != null ? Economy.Money : 0f;
         public float                       StrokeCost  => _pendingCost;
-        public float                       StrokeWidth => RoadSpecs.Width(Type);
+        public float                       StrokeWidth => RoadSpecs.Width(_type);
         public string                      LengthLabel => _pendingLength > 0f ? Mathf.RoundToInt(_pendingLength) + " м." : "";
-        Camera IRoadStroke.Cam => Cam;
+        Camera IRoadStroke.Cam => _cam;
 
         public void Confirm()
         {
@@ -95,7 +96,7 @@ namespace CityGame.Roads
 
         void Awake()
         {
-            if (Cam == null) Cam = Camera.main;
+            if (_cam == null) _cam = Camera.main;
             CreatePreview();
         }
 
@@ -125,16 +126,16 @@ namespace CityGame.Roads
         void RefreshPreviewStyle()
         {
             if (_previewMaterial == null) return;
-            Color c = RoadSpecs.BodyColor(Type);
+            Color c = RoadSpecs.BodyColor(_type);
             _previewMaterial.color       = new Color(c.r, c.g, c.b, 0.6f);
-            if (_preview != null) _preview.widthMultiplier = RoadSpecs.Width(Type);
+            if (_preview != null) _preview.widthMultiplier = RoadSpecs.Width(_type);
         }
 
         // ——— Update ———
 
         void Update()
         {
-            if (_graph == null || Cam == null) return;
+            if (_graph == null || _cam == null) return;
             PointerInput.Poll();
 
             if (!_drawing)
@@ -156,8 +157,8 @@ namespace CityGame.Roads
 
         Vector2 PointerWorld()
         {
-            Vector3 p = Cam.ScreenToWorldPoint(new Vector3(
-                PointerInput.Position.x, PointerInput.Position.y, -Cam.transform.position.z));
+            Vector3 p = _cam.ScreenToWorldPoint(new Vector3(
+                PointerInput.Position.x, PointerInput.Position.y, -_cam.transform.position.z));
             return new Vector2(p.x, p.y);
         }
 
@@ -165,7 +166,7 @@ namespace CityGame.Roads
 
         void BeginAt(Vector2 world)
         {
-            RoadNode snap = _graph.FindNodeNear(world, SnapRadius, RoadSpecs.LayerFor(Type));
+            RoadNode snap = _graph.FindNodeNear(world, _snapRadius, RoadSpecs.LayerFor(_type));
             if (snap != null)
             {
                 _startPoint   = snap.Position;
@@ -190,7 +191,7 @@ namespace CityGame.Roads
 
         void UpdateEnd(Vector2 world)
         {
-            RoadNode snap = _graph.FindNodeNear(world, SnapRadius, RoadSpecs.LayerFor(Type));
+            RoadNode snap = _graph.FindNodeNear(world, _snapRadius, RoadSpecs.LayerFor(_type));
             if (snap != null && snap != _startNode)
             {
                 _endPoint = snap.Position;
@@ -219,7 +220,7 @@ namespace CityGame.Roads
         {
             _drawing = false;
             float len = _curve != null ? PolylineUtil.Length(_curve) : 0f;
-            if (_curve == null || _curve.Count < 2 || len < MinRoadLength)
+            if (_curve == null || _curve.Count < 2 || len < _minRoadLength)
             {
                 _curve = null;
                 UpdatePreviewLine();
@@ -311,7 +312,7 @@ namespace CityGame.Roads
         float CalcCost(List<Vector2> pts)
         {
             if (Economy == null) return 0f;
-            float pricePerUnit = Type == RoadType.Highway ? Economy.HighwayCostPerCell : Economy.RoadCostPerCell;
+            float pricePerUnit = _type == RoadType.Highway ? Economy.HighwayCostPerCell : Economy.RoadCostPerCell;
             float length       = PolylineUtil.Length(pts);
             float factor       = 1f;
 
@@ -342,7 +343,7 @@ namespace CityGame.Roads
 
             if (Economy != null && cost > 0f && !Economy.TrySpend(cost))
             {
-                float pricePerUnit = Type == RoadType.Highway ? Economy.HighwayCostPerCell : Economy.RoadCostPerCell;
+                float pricePerUnit = _type == RoadType.Highway ? Economy.HighwayCostPerCell : Economy.RoadCostPerCell;
                 float affordable   = Economy.Money;
                 float firstSeg     = pricePerUnit * (CostFactorAt != null ? CostFactorAt(pts[0]) : 1f);
                 if (affordable < firstSeg) return;
@@ -361,7 +362,7 @@ namespace CityGame.Roads
                 Economy.TrySpend(cost);
             }
 
-            RoadEdge edge = RoadBuilder.Build(_graph, pts, Type, SnapRadius, MinRoadLength);
+            RoadEdge edge = RoadBuilder.Build(_graph, pts, _type, _snapRadius, _minRoadLength);
             if (edge != null)
             {
                 if (OneWayMode) edge.OneWay = 1;

@@ -10,12 +10,12 @@ namespace CityGame.Flow
     /// </summary>
     public sealed class FlowHeatmap : MonoBehaviour
     {
-        public float HaloScale = 2.4f;
+        [SerializeField] float _haloScale = 2.4f;
         [Tooltip("Радиус пятна на развилке")]
-        public float JunctionRadius = 0.7f;
-        public Color Low = new Color32(0x6B, 0xCB, 0x77, 0xB0);
-        public Color Mid = new Color32(0xFF, 0xD9, 0x3D, 0xC0);
-        public Color High = new Color32(0xFF, 0x4D, 0x4D, 0xD0);
+        [SerializeField] float _junctionRadius = 0.7f;
+        [SerializeField] Color _low = new Color32(0x6B, 0xCB, 0x77, 0xB0);
+        [SerializeField] Color _mid = new Color32(0xFF, 0xD9, 0x3D, 0xC0);
+        [SerializeField] Color _high = new Color32(0xFF, 0x4D, 0x4D, 0xD0);
 
         FlowSolver _solver;
         RoadGraph _graph;
@@ -49,8 +49,8 @@ namespace CityGame.Flow
 
         Color ColorFor(float ratio)
         {
-            if (ratio <= 0.8f) return Color.Lerp(Low, Mid, Mathf.Clamp01(ratio / 0.8f));
-            return Color.Lerp(Mid, High, Mathf.Clamp01((ratio - 0.8f) / 0.7f));
+            if (ratio <= 0.8f) return Color.Lerp(_low, _mid, Mathf.Clamp01(ratio / 0.8f));
+            return Color.Lerp(_mid, _high, Mathf.Clamp01((ratio - 0.8f) / 0.7f));
         }
 
         void Clear()
@@ -76,7 +76,7 @@ namespace CityGame.Flow
                 RoadEdge edge = _graph.GetEdge(kv.Key);
                 if (edge == null) continue;
 
-                Mesh mesh = RoadMeshBuilder.BuildRibbon(edge.Points, RoadSpecs.Width(edge.Type) * HaloScale);
+                Mesh mesh = RoadMeshBuilder.BuildRibbon(edge.Points, RoadSpecs.Width(edge.Type) * _haloScale);
                 Color c = ColorFor(kv.Value);
                 var colors = new Color[mesh.vertexCount];
                 for (int i = 0; i < colors.Length; i++) colors[i] = c;
@@ -97,7 +97,7 @@ namespace CityGame.Flow
                 RoadNode node = _graph.GetNode(kv.Key);
                 if (node == null) continue;
 
-                Mesh disc = RoadMeshBuilder.BuildDisc(node.Position, JunctionRadius, 20);
+                Mesh disc = RoadMeshBuilder.BuildDisc(node.Position, _junctionRadius, 20);
                 Color c = ColorFor(kv.Value);
                 var colors = new Color[disc.vertexCount];
                 for (int i = 0; i < colors.Length; i++) colors[i] = c;

@@ -36,7 +36,7 @@ namespace CityGame.World
     /// </summary>
     public sealed class NightLights : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
 
         static readonly Color Warm = new Color(1f, 0.86f, 0.5f, 1f);
         static readonly Color Cool = new Color(0.8f, 0.94f, 1f, 1f);

@@ -7,13 +7,13 @@ namespace CityGame.CellRoads
     /// <summary>Рисует все дороги по клеткам: дорога, остров кольца, тень и полотно эстакады. Четыре меша, перестраиваются при изменении.</summary>
     public sealed class CellRoadRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
-        [Range(0.2f, 0.9f)] public float WidthFraction = 0.5f;
-        public Color MarkingColor = new Color32(0xE9, 0xE6, 0xDA, 0xFF);
-        public Color MedianColor = new Color32(0xF2, 0xB8, 0x4B, 0xFF);
-        public Color SelectionColor = new Color32(0x4D, 0xA3, 0xFF, 0xFF);
-        public Color IslandColor = new Color32(0xA9, 0xD1, 0x8E, 0xFF);
-        public Color ShadowColor = new Color32(0x1E, 0x24, 0x2B, 0x59);
+        public float CellSize { get; set; } = 1f;
+        [Range(0.2f, 0.9f)] [SerializeField] float _widthFraction = 0.5f;
+        [SerializeField] Color _markingColor = new Color32(0xE9, 0xE6, 0xDA, 0xFF);
+        [SerializeField] Color _medianColor = new Color32(0xF2, 0xB8, 0x4B, 0xFF);
+        [SerializeField] Color _selectionColor = new Color32(0x4D, 0xA3, 0xFF, 0xFF);
+        [SerializeField] Color _islandColor = new Color32(0xA9, 0xD1, 0x8E, 0xFF);
+        [SerializeField] Color _shadowColor = new Color32(0x1E, 0x24, 0x2B, 0x59);
 
         CellRoadMap _map;
         readonly List<GameObject> _views = new List<GameObject>();
@@ -34,7 +34,7 @@ namespace CityGame.CellRoads
             Color road = RoadSpecs.BodyColor(RoadType.Local);
             _materials = new[]
             {
-                Make(road), Make(MarkingColor), Make(IslandColor), Make(ShadowColor), Make(road), Make(MarkingColor), Make(SelectionColor), Make(MedianColor)
+                Make(road), Make(_markingColor), Make(_islandColor), Make(_shadowColor), Make(road), Make(_markingColor), Make(_selectionColor), Make(_medianColor)
             };
             Redraw();
         }
@@ -65,7 +65,7 @@ namespace CityGame.CellRoads
 
             _views.Clear();
 
-            RoadLayers layers = RoadCellMesher.Build(_map.Cells, _map.DisplayTypeAt, _map.LaneAt, CellSize, WidthFraction);
+            RoadLayers layers = RoadCellMesher.Build(_map.Cells, _map.DisplayTypeAt, _map.LaneAt, CellSize, _widthFraction);
             if (_map.PreviewCell.HasValue && _map.IsJunction(_map.PreviewCell.Value))
                 RoadCellMesher.AppendSelection(layers, _map.PreviewCell.Value, CellSize);
             int baseOrder = RoadSpecs.SortingOrder(RoadLayer.Ground);

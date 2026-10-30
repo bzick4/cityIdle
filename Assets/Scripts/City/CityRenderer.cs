@@ -14,7 +14,7 @@ namespace CityGame.Buildings
     /// </summary>
     public sealed class CityRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         [Range(0.5f, 1f)] public float Fill = 0.88f;
         [Tooltip("Ширина контура, доля клетки")]
         public float RimWidth = 0.05f;

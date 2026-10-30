@@ -14,17 +14,19 @@ namespace CityGame
     /// </summary>
     public sealed class CameraRig : MonoBehaviour
     {
-        public Camera Cam;
+        [SerializeField] Camera _cam;
+        public Camera Cam => _cam;
 
         [Tooltip("Ширина видимой карты в мировых единицах")]
-        public float WorldWidth = 18f;
-        public float MinWorldWidth = 6f;
-        public float MaxWorldWidth = 60f;
-        public Color Background = new Color32(0x2B, 0x31, 0x3A, 0xFF);
+        [SerializeField] float _worldWidth = 18f;
+        public float WorldWidth => _worldWidth;
+        [SerializeField] float _minWorldWidth = 6f;
+        [SerializeField] float _maxWorldWidth = 60f;
+        [SerializeField] Color _background = new Color32(0x2B, 0x31, 0x3A, 0xFF);
 
         [Tooltip("Один палец двигает карту (режим «Рука»)")]
-        public bool PanEnabled;
-        public System.Func<Vector2, bool> IsPointerBlocked;
+        public bool PanEnabled { get; set; }
+        public System.Func<Vector2, bool> IsPointerBlocked { get; set; }
 
         bool _dragging;
         Vector2 _last;
@@ -36,15 +38,15 @@ namespace CityGame
 
         void Awake()
         {
-            if (Cam == null) Cam = Camera.main;
-            if (Cam == null) return;
+            if (_cam == null) _cam = Camera.main;
+            if (_cam == null) return;
 
-            Cam.orthographic = true;
-            Cam.clearFlags = CameraClearFlags.SolidColor;
-            Cam.backgroundColor = Background;
+            _cam.orthographic = true;
+            _cam.clearFlags = CameraClearFlags.SolidColor;
+            _cam.backgroundColor = _background;
             // Стартуем над центром стартового сектора.
-            Cam.transform.position = new Vector3(0f, 0f, -10f);
-            Cam.transform.rotation = Quaternion.identity;
+            _cam.transform.position = new Vector3(0f, 0f, -10f);
+            _cam.transform.rotation = Quaternion.identity;
 
             Screen.orientation = ScreenOrientation.Portrait;
             Screen.autorotateToLandscapeLeft = false;
@@ -56,9 +58,9 @@ namespace CityGame
         /// <summary>Положение и масштаб камеры (для загрузки сохранения).</summary>
         public void SetView(Vector2 position, float worldWidth)
         {
-            if (Cam == null) return;
-            WorldWidth = Mathf.Clamp(worldWidth, MinWorldWidth, MaxWorldWidth);
-            Cam.transform.position = new Vector3(position.x, position.y, -10f);
+            if (_cam == null) return;
+            _worldWidth = Mathf.Clamp(worldWidth, _minWorldWidth, _maxWorldWidth);
+            _cam.transform.position = new Vector3(position.x, position.y, -10f);
             FitWidth();
         }
 
@@ -72,14 +74,14 @@ namespace CityGame
 
         void FitWidth()
         {
-            if (Cam == null) return;
+            if (_cam == null) return;
             float aspect = Mathf.Max(0.1f, (float)Screen.width / Mathf.Max(1, Screen.height));
-            Cam.orthographicSize = WorldWidth * 0.5f / aspect;
+            _cam.orthographicSize = _worldWidth * 0.5f / aspect;
         }
 
         Vector3 ScreenToWorld(Vector2 screen)
         {
-            return Cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -Cam.transform.position.z));
+            return _cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -_cam.transform.position.z));
         }
 
         /// <summary>
@@ -89,15 +91,15 @@ namespace CityGame
         void Apply(Vector2 prevScreen, Vector2 nowScreen, float zoomFactor)
         {
             Vector3 before = ScreenToWorld(prevScreen);
-            WorldWidth = Mathf.Clamp(WorldWidth * zoomFactor, MinWorldWidth, MaxWorldWidth);
+            _worldWidth = Mathf.Clamp(_worldWidth * zoomFactor, _minWorldWidth, _maxWorldWidth);
             FitWidth();
             Vector3 after = ScreenToWorld(nowScreen);
-            Cam.transform.position += new Vector3(before.x - after.x, before.y - after.y, 0f);
+            _cam.transform.position += new Vector3(before.x - after.x, before.y - after.y, 0f);
         }
 
         void Update()
         {
-            if (Cam == null) return;
+            if (_cam == null) return;
             FitWidth();
 
             PointerInput.Poll();

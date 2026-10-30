@@ -10,7 +10,7 @@ namespace CityGame.Water
     /// </summary>
     public sealed class CanalRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         public int SortingOrder = -19;
 
         static readonly Color Bank = new Color32(0xD5, 0xC2, 0x91, 0xFF);

@@ -14,10 +14,10 @@ namespace CityGame.CellRoads
     public sealed class HighwayLaneTool : MonoBehaviour, IRoadStroke
     {
         public Camera Cam;
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         [Tooltip("Смещение пальца в сторону для поворота маршрута, в клетках")]
-        public int TurnThreshold = 2;
-        public bool OneWayMode;
+        [SerializeField] int _turnThreshold = 2;
+        public bool OneWayMode { get; set; }
         public Func<Vector2, bool> IsPointerBlocked;
         public event Action<string> Message;
 
@@ -251,7 +251,7 @@ namespace CityGame.CellRoads
                 int across = _horizontal ? delta.y : delta.x;
                 // Не меняем ось, пока не дошли до цели по текущему направлению.
                 // Иначе при диагональном движении палец заставляет маршрут метаться между осями.
-                if (along == 0 && Mathf.Abs(across) >= Mathf.Max(1, TurnThreshold))
+                if (along == 0 && Mathf.Abs(across) >= Mathf.Max(1, _turnThreshold))
                 {
                     _horizontal = !_horizontal;
                     along = _horizontal ? delta.x : delta.y;

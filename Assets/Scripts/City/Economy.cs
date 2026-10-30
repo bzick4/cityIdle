@@ -4,59 +4,56 @@ using UnityEngine;
 
 namespace CityGame.Buildings
 {
-    /// <summary>
-    /// Деньги и налоги. Раз в TickSeconds каждый район платит
-    /// IncomePerCell[категория] × множитель слияния × коэффициент довольства.
-    /// Все числа временные, подбираются в инспекторе.
-    /// </summary>
     public sealed class Economy : MonoBehaviour
     {
-        public float Money = 1000f;
-        public float TickSeconds = 1f;
+        [SerializeField] float _tickSeconds = 1f;
 
-        [Tooltip("X: доход одной ячейки в секунду. Порядок: жильё, торговля, промышленность, служба")]
-        public float[] IncomePerCell = { 1f, 1f, 1f, 0f };
+        [Header("Доход (временные значения)")]
+        [SerializeField] float[] _incomePerCell = { 1f, 1f, 1f, 0f };
+        [SerializeField] float[] _buildCost = { 100f, 100f, 100f, 300f };
+        [SerializeField] float[] _serviceCost = { 300f, 300f, 300f };
+        [SerializeField] float[] _utilityCost = { 350f, 250f };
 
-        [Tooltip("Цена одной ячейки. Порядок как выше")]
-        public float[] BuildCost = { 100f, 100f, 100f, 300f };
+        [Header("Цены дорог")]
+        [SerializeField] float _roadCostPerCell = 5f;
+        [SerializeField] float _highwayCostPerCell = 10f;
+        [SerializeField] float _roundaboutCost = 50f;
+        [SerializeField] float _highwayRoundaboutCost = 140f;
+        [SerializeField] float _overpassCost = 100f;
 
-        [Tooltip("Цена службы по виду: скорая, полиция, пожарные")]
-        public float[] ServiceCost = { 300f, 300f, 300f };
+        [Header("Цены инфраструктуры")]
+        [SerializeField] float _canalCostPerCell = 8f;
+        [SerializeField] float _portCost = 400f;
+        [SerializeField] float _busStationCost = 250f;
 
-        [Tooltip("Цена коммунальных станций: электростанция, водонапорная башня")]
-        public float[] UtilityCost = { 350f, 250f };
+        [Header("Баланс")]
+        [SerializeField] float _baseIncomePerSecond = 0.5f;
+        [SerializeField] [Range(0f, 1f)] float _satisfactionFloor = 0.25f;
+        [SerializeField] float _startMoney = 1000f;
 
-        [Tooltip("Цена одной клетки дороги")]
-        public float RoadCostPerCell = 5f;
-        [Tooltip("Цена одной клетки самостоятельного шоссе")]
-        public float HighwayCostPerCell = 10f;
+        public float TickSeconds => _tickSeconds;
+        public float[] IncomePerCell => _incomePerCell;
+        public float[] BuildCost => _buildCost;
+        public float[] ServiceCost => _serviceCost;
+        public float[] UtilityCost => _utilityCost;
+        public float RoadCostPerCell => _roadCostPerCell;
+        public float HighwayCostPerCell => _highwayCostPerCell;
+        public float RoundaboutCost => _roundaboutCost;
+        public float HighwayRoundaboutCost => _highwayRoundaboutCost;
+        public float OverpassCost => _overpassCost;
+        public float CanalCostPerCell => _canalCostPerCell;
+        public float PortCost => _portCost;
+        public float BusStationCost => _busStationCost;
+        public float BaseIncomePerSecond => _baseIncomePerSecond;
 
-        [Tooltip("Цена малого кольца, кольца шоссе и эстакады")]
-        public float RoundaboutCost = 50f;
-        public float HighwayRoundaboutCost = 140f;
-        public float OverpassCost = 100f;
+        public float Money { get; private set; }
 
-        [Tooltip("Цена одной новой клетки канала. Море бесплатно: там уже вода")]
-        public float CanalCostPerCell = 8f;
-        [Tooltip("Цена порта")]
-        public float PortCost = 400f;
-        [Tooltip("Цена автостанции")]
-        public float BusStationCost = 250f;
-
-        /// <summary>Доля клеток района с электричеством и водой, 0..1. Без сети всё считается подключённым.</summary>
-        public Func<District, float> UtilityFactor;
-
-        /// <summary>Доход, который не считается по районам (порты и корабли), в секунду.</summary>
-        public Func<float> ExtraIncome;
-
-        [Tooltip("Минимальный доход в секунду, идёт всегда")]
-        public float BaseIncomePerSecond = 0.5f;
-
-        [Tooltip("Доля налога при нулевом довольстве. При полном довольстве налог 100%")]
-        [Range(0f, 1f)] public float SatisfactionFloor = 0.25f;
+        public Func<District, float> UtilityFactor { get; set; }
+        public Func<float> ExtraIncome { get; set; }
 
         public event Action<District, float> TaxCollected;
         public event Action<float> MoneyChanged;
+        public event Action Spent;
 
         CityModel _model;
         ServiceCoverage _coverage;
@@ -67,18 +64,17 @@ namespace CityGame.Buildings
             _model = model;
             _coverage = coverage;
             _biomes = biomes;
+            Money = _startMoney;
             StopAllCoroutines();
             StartCoroutine(TickLoop());
         }
 
-        /// <summary>Цена здания в клетке: биом снега и пустыни даёт скидку.</summary>
         public float CostAt(BuildingCategory c, ServiceKind kind, Vector2Int cell)
         {
             float k = _biomes != null ? _biomes.CostFactor(cell) : 1f;
             return CostOf(c, kind) * k;
         }
 
-        /// <summary>Общая прибавка к налогу района: службы и лес, доля.</summary>
         public float BonusOf(District d)
         {
             float bonus = _coverage != null ? _coverage.BonusOf(d) : 0f;
@@ -88,16 +84,14 @@ namespace CityGame.Buildings
                 foreach (BuildingCell c in d.Cells) sum += _biomes.TaxBonusAt(c.Pos);
                 bonus += sum / d.Count;
             }
-
             return bonus;
         }
 
-        /// <summary>Доход в секунду с учётом слияния и довольства.</summary>
         public float IncomePerSecond
         {
             get
             {
-                float sum = BaseIncomePerSecond + (ExtraIncome != null ? ExtraIncome() : 0f);
+                float sum = _baseIncomePerSecond + (ExtraIncome != null ? ExtraIncome() : 0f);
                 if (_model != null)
                     foreach (District d in _model.Districts) sum += DistrictIncomePerSecond(d);
                 return sum;
@@ -106,24 +100,25 @@ namespace CityGame.Buildings
 
         public float CostOf(BuildingCategory c, ServiceKind kind = ServiceKind.Ambulance)
         {
-            if (c != BuildingCategory.Service) return BuildCost[(int)c];
+            if (c != BuildingCategory.Service) return _buildCost[(int)c];
             int k = (int)kind;
             if (ServiceSpecs.IsUtility(kind))
             {
                 int u = k - (int)ServiceKind.PowerPlant;
-                return u < UtilityCost.Length ? UtilityCost[u] : 300f;
+                return u < _utilityCost.Length ? _utilityCost[u] : 300f;
             }
-
-            return k < ServiceCost.Length ? ServiceCost[k] : 300f;
+            return k < _serviceCost.Length ? _serviceCost[k] : 300f;
         }
 
         public bool CanAfford(BuildingCategory c, ServiceKind kind = ServiceKind.Ambulance)
-        {
-            return Money >= CostOf(c, kind);
-        }
+            => Money >= CostOf(c, kind);
 
-        /// <summary>Деньги потрачены на постройку: любой инструмент строительства сообщает об этом здесь.</summary>
-        public event Action Spent;
+        /// <summary>Восстановление денег из сохранения.</summary>
+        public void RestoreMoney(float amount)
+        {
+            Money = amount;
+            MoneyChanged?.Invoke(Money);
+        }
 
         public bool TrySpend(float amount)
         {
@@ -141,20 +136,18 @@ namespace CityGame.Buildings
         }
 
         public float SatisfactionFactor(District d)
-        {
-            return SatisfactionFloor + (1f - SatisfactionFloor) * Mathf.Clamp01(d.Satisfaction);
-        }
+            => _satisfactionFloor + (1f - _satisfactionFloor) * Mathf.Clamp01(d.Satisfaction);
 
         public float DistrictIncomePerSecond(District d)
         {
             float bonus = BonusOf(d);
             float served = UtilityFactor != null ? UtilityFactor(d) : 1f;
-            return IncomePerCell[(int)d.Category] * d.Multiplier * SatisfactionFactor(d) * (1f + bonus) * served;
+            return _incomePerCell[(int)d.Category] * d.Multiplier * SatisfactionFactor(d) * (1f + bonus) * served;
         }
 
         System.Collections.IEnumerator TickLoop()
         {
-            var wait = new WaitForSeconds(TickSeconds);
+            var wait = new WaitForSeconds(_tickSeconds);
             while (true)
             {
                 yield return wait;
@@ -164,15 +157,14 @@ namespace CityGame.Buildings
 
         void Tick()
         {
-            float total = (BaseIncomePerSecond + (ExtraIncome != null ? ExtraIncome() : 0f)) * TickSeconds;
+            float total = (_baseIncomePerSecond + (ExtraIncome != null ? ExtraIncome() : 0f)) * _tickSeconds;
             foreach (District d in _model.Districts)
             {
-                float tax = DistrictIncomePerSecond(d) * TickSeconds;
+                float tax = DistrictIncomePerSecond(d) * _tickSeconds;
                 if (tax <= 0f) continue;
                 total += tax;
                 TaxCollected?.Invoke(d, tax);
             }
-
             Add(total);
         }
     }

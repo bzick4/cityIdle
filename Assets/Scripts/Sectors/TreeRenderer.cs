@@ -7,8 +7,8 @@ namespace CityGame.Sectors
     /// <summary>Рисует деревья на свободных клетках стандартного биома: тень, крона и блик.</summary>
     public sealed class TreeRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
-        public int SortingOrder = -20;
+        public float CellSize { get; set; } = 1f;
+        [SerializeField] int _sortingOrder = -20;
 
         /// <summary>Сектора, которые сейчас «падают»: их деревья рисует SectorRenderer вместе с плиткой.</summary>
         public SectorRenderer Drops;
@@ -87,7 +87,7 @@ namespace CityGame.Sectors
                 var mat = new Material(Shader.Find("Sprites/Default")) { color = Color.white };
                 var mr = _view.AddComponent<MeshRenderer>();
                 mr.sharedMaterial = mat;
-                mr.sortingOrder = SortingOrder;
+                mr.sortingOrder = _sortingOrder;
             }
 
             var f = _view.GetComponent<MeshFilter>();

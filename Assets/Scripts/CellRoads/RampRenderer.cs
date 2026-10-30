@@ -8,7 +8,7 @@ namespace CityGame.CellRoads
     /// </summary>
     public sealed class RampRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
 
         RampMap _map;
         readonly List<GameObject> _views = new List<GameObject>();

@@ -8,7 +8,7 @@ namespace CityGame.City
     /// </summary>
     public sealed class EventRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
 
         EventSystem _events;
         Material _mat;

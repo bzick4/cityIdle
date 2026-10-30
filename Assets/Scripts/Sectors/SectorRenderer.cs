@@ -12,19 +12,19 @@ namespace CityGame.Sectors
     /// </summary>
     public sealed class SectorRenderer : MonoBehaviour
     {
-        public Color OpenColor = new Color32(0xF6, 0xF3, 0xEC, 0xFF);
+        [SerializeField] Color _openColor = new Color32(0xF6, 0xF3, 0xEC, 0xFF);
         [Tooltip("Закрытые сектора: тёмно-серый, ближе к чёрному")]
-        public Color FrontierColor = new Color32(0x1F, 0x23, 0x29, 0xFF);
+        [SerializeField] Color _frontierColor = new Color32(0x1F, 0x23, 0x29, 0xFF);
         [Tooltip("Насколько закрытый сектор намекает на свой биом, 0..1")]
         [Range(0f, 0.4f)] public float ClosedHint = 0.12f;
-        public Color PendingColor = new Color32(0xBF, 0xD9, 0xEE, 0xFF);
+        [SerializeField] Color _pendingColor = new Color32(0xBF, 0xD9, 0xEE, 0xFF);
         [Range(0.9f, 1f)] public float Gap = 0.985f;
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         [Range(0.01f, 0.1f)] public float GridLine = 0.04f;
 
         [Header("Анимация открытия сектора (подкручивай здесь или в инспекторе)")]
         [Tooltip("Сколько секунд сектор уменьшается до размера карты")]
-        public float DropDuration = 1.1f;
+        [SerializeField] float _dropDuration = 1.1f;
         [Tooltip("Мягкость остановки масштаба. 0 = ровно, больше = лёгкий отскок")]
         [Range(0f, 0.5f)] public float DropSoftness = 0.08f;
         [Tooltip("Начальный масштаб: сектор появляется увеличенным и сжимается до размера клетки")]
@@ -32,7 +32,7 @@ namespace CityGame.Sectors
         [Tooltip("Какую часть времени сектор проявляется из прозрачности. 0.5 = за первую половину падения")]
         [Range(0.05f, 1f)] public float DropFadeShare = 0.5f;
         [Tooltip("Длительность волны по сетке после сжатия сектора")]
-        public float GridWaveDuration = 0.9f;
+        [SerializeField] float _gridWaveDuration = 0.9f;
         [Tooltip("Яркость тёплой подсветки, расходящейся по сетке от центра")]
         [Range(0f, 1.5f)] public float GridWaveStrength = 0.95f;
         [Tooltip("Ширина светящегося кольца волны в размерах клетки")]
@@ -193,7 +193,7 @@ namespace CityGame.Sectors
                 var b = (Biome)i;
                 Color ground = BiomeSpecs.Ground(b);
                 Add(_openViews, Make("Open " + b, open[i], ground, -30));
-                Add(_frontierViews, Make("Closed " + b, frontier[i], Color.Lerp(FrontierColor, ground, ClosedHint), -30));
+                Add(_frontierViews, Make("Closed " + b, frontier[i], Color.Lerp(_frontierColor, ground, ClosedHint), -30));
                 Color grid = Color.Lerp(ground, Color.black, 0.07f);
                 GameObject gridView = MakeGrid(open[i], grid);
                 if (gridView != null)
@@ -203,7 +203,7 @@ namespace CityGame.Sectors
                 }
             }
 
-            _pending = Make("Pending sector", pendingList, PendingColor, -29);
+            _pending = Make("Pending sector", pendingList, _pendingColor, -29);
 
             foreach (Drop d in _drops) BuildDrop(d);
         }
@@ -258,12 +258,12 @@ namespace CityGame.Sectors
                 d.Mats[mi].color = col0;
             }
 
-            float fadeTime = DropDuration * Mathf.Max(0.05f, DropFadeShare);
+            float fadeTime = _dropDuration * Mathf.Max(0.05f, DropFadeShare);
 
             d.Seq = DOTween.Sequence();
 
             // Масштаб: startScale → 1, easeOutBack с настраиваемым overshoot
-            d.Seq.Insert(0f, d.Root.transform.DOScale(1f, DropDuration)
+            d.Seq.Insert(0f, d.Root.transform.DOScale(1f, _dropDuration)
                 .SetEase(Ease.OutBack, DropSoftness * 1.2f));
 
             // Проявление: smoothstep по alpha всех материалов
@@ -279,8 +279,8 @@ namespace CityGame.Sectors
             }, 1f, fadeTime).SetEase(Ease.Linear));
 
             // Волна по сетке после завершения падения
-            d.Seq.Insert(DropDuration, DOTween.To(
-                () => 0f, waveT => ApplyGridWave(d, waveT), 1f, GridWaveDuration)
+            d.Seq.Insert(_dropDuration, DOTween.To(
+                () => 0f, waveT => ApplyGridWave(d, waveT), 1f, _gridWaveDuration)
                 .SetEase(Ease.Linear));
 
             Drop captured = d;

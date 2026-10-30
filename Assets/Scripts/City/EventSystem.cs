@@ -15,16 +15,13 @@ namespace CityGame.City
         public float TimeLeft;
     }
 
-    /// <summary>
-    /// Генерирует случайные события (пожар, болезнь, преступность).
-    /// Если нужная служба покрывает клетку — событие ликвидируется сразу.
-    /// Иначе — таймер UncoveredTimer секунд, затем здание уничтожается.
-    /// </summary>
     public sealed class EventSystem : MonoBehaviour
     {
-        public float MinInterval = 45f;
-        public float MaxInterval = 90f;
-        public float UncoveredTimer = 30f;
+        [SerializeField] float _minInterval = 45f;
+        [SerializeField] float _maxInterval = 90f;
+        [SerializeField] float _uncoveredTimer = 30f;
+
+        const float CheckInterval = 0.5f;
 
         public event Action<string> Message;
         public IReadOnlyList<CityEvent> Active => _active;
@@ -32,8 +29,6 @@ namespace CityGame.City
         CityModel _model;
         ServiceCoverage _coverage;
         readonly List<CityEvent> _active = new List<CityEvent>();
-
-        const float CheckInterval = 0.5f;
 
         public void Bind(CityModel model, ServiceCoverage coverage)
         {
@@ -48,7 +43,7 @@ namespace CityGame.City
         {
             while (true)
             {
-                yield return new WaitForSeconds(Random.Range(MinInterval, MaxInterval));
+                yield return new WaitForSeconds(Random.Range(_minInterval, _maxInterval));
                 if (_model != null) TrySpawnEvent();
             }
         }
@@ -97,7 +92,7 @@ namespace CityGame.City
             }
             else
             {
-                _active.Add(new CityEvent { Type = type, Cell = target.Pos, TimeLeft = UncoveredTimer });
+                _active.Add(new CityEvent { Type = type, Cell = target.Pos, TimeLeft = _uncoveredTimer });
                 Message?.Invoke(EventName(type) + "! Нет нужной службы рядом");
             }
         }

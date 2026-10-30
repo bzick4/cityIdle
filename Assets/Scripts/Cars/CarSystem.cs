@@ -13,38 +13,39 @@ namespace CityGame.Cars
     /// когда накопленная сумма достигает очередного целого. Первые три жилых блока дают по целой машине.
     /// Машина живёт в городе постоянно: стоит у дома, едет в торговую или промышленную цель, пережидает там,
     /// возвращается домой. Если под ней перестроили дороги, она ищет путь заново от своей точки и не исчезает.
-    /// На въезд в ребро и в развилку нужен «талон»: интервал равен 1 / (пропускная способность × CarsPerFlow),
+    /// На въезд в ребро и в развилку нужен «талон»: интервал равен 1 / (пропускная способность × _carsPerFlow),
     /// поэтому при перегрузе перед узким местом растёт очередь со стоп-сигналами.
     /// Это визуальный слой: налоги считает FlowSolver.
     /// </summary>
     public sealed class CarSystem : MonoBehaviour
     {
+        public float CellSize { get; set; } = 1f;
+
         [Header("Размеры, в единицах мира")]
-        public float CellSize = 1f;
-        public float CarLength = 0.3f;
-        public float CarWidth = 0.15f;
-        public float MinGap = 0.07f;
+        [SerializeField] float _carLength = 0.3f;
+        [SerializeField] float _carWidth = 0.15f;
+        [SerializeField] float _minGap = 0.07f;
         [Tooltip("Смещение полосы от оси дороги, доля клетки")]
-        public float LaneOffset = 0.125f;
+        [SerializeField] float _laneOffset = 0.125f;
 
         [Header("Парк")]
         [Tooltip("Сколько машин даёт один жилой блок: от и до")]
-        public float ContributionMin = 0.2f;
-        public float ContributionMax = 0.6f;
+        [SerializeField] float _contributionMin = 0.2f;
+        [SerializeField] float _contributionMax = 0.6f;
         [Tooltip("Первые столько жилых блоков дают по целой машине")]
-        public int FreeCars = 3;
+        [SerializeField] int _freeCars = 3;
         [Tooltip("Сколько стоит дома между поездками, секунд: от и до")]
-        public Vector2 ParkSeconds = new Vector2(2f, 6f);
+        [SerializeField] Vector2 _parkSeconds = new Vector2(2f, 6f);
         [Tooltip("Сколько стоит у цели, секунд: от и до")]
-        public Vector2 DwellSeconds = new Vector2(3f, 8f);
+        [SerializeField] Vector2 _dwellSeconds = new Vector2(3f, 8f);
 
         [Header("Движение")]
         [Tooltip("Задаёт пропускную способность в машинах в секунду: способность × это число")]
-        public float CarsPerFlow = 0.15f;
+        [SerializeField] float _carsPerFlow = 0.15f;
         [Tooltip("Множитель к скорости из расчёта потоков")]
-        public float SpeedScale = 0.8f;
+        [SerializeField] float _speedScale = 0.8f;
         [Tooltip("Радиус поиска дороги под машиной после перестройки сети")]
-        public float RerouteRadius = 1.0f;
+        [SerializeField] float _rerouteRadius = 1.0f;
 
         /// <summary>Всего машин в парке, включая стоящих дома и у цели.</summary>
         public int Count => _cars.Count;
@@ -100,7 +101,7 @@ namespace CityGame.Cars
         MeshRenderer _low, _high, _lights;
 
         /// <summary>Время суток. Ночью у машин горят фары.</summary>
-        public CityGame.World.DayNight Day;
+        public CityGame.World.DayNight Day { get; set; }
         bool _visible = true;
         float _now;
         int _rotate;
@@ -161,7 +162,7 @@ namespace CityGame.Cars
         float Contribution(Vector2Int cell)
         {
             float t = (BiomeMap.Mix(cell.x, cell.y, 33) & 0xFFFF) / 65535f;
-            return Mathf.Lerp(ContributionMin, ContributionMax, t);
+            return Mathf.Lerp(_contributionMin, _contributionMax, t);
         }
 
         Vector2 ParkedPos(Vector2Int home)
@@ -182,7 +183,7 @@ namespace CityGame.Cars
             for (int i = 0; i < residents.Count; i++)
             {
                 // Первые блоки дают машину сразу, остальные копят случайную долю.
-                sum += i < FreeCars ? 1f : Contribution(residents[i].Pos);
+                sum += i < _freeCars ? 1f : Contribution(residents[i].Pos);
                 while (homes.Count < Mathf.FloorToInt(sum + 1e-4f)) homes.Add(residents[i].Pos);
             }
 
@@ -200,7 +201,7 @@ namespace CityGame.Cars
                 {
                     Home = homes[i],
                     State = State.Parked,
-                    Timer = Random.Range(ParkSeconds.x, ParkSeconds.y),
+                    Timer = Random.Range(_parkSeconds.x, _parkSeconds.y),
                     Color = Palette[(_serial++ * 5 + 1) % Palette.Length],
                     Pos = ParkedPos(homes[i]),
                     Dir = Vector2.right,
@@ -272,7 +273,7 @@ namespace CityGame.Cars
 
         float EdgeHeadway(RoadEdge e)
         {
-            return 1f / Mathf.Max(0.01f, _flow.EdgeCapacity(e) * CarsPerFlow);
+            return 1f / Mathf.Max(0.01f, _flow.EdgeCapacity(e) * _carsPerFlow);
         }
 
         /// <summary>Сколько можно проехать вперёд до переднего авто на этой полосе.</summary>
@@ -286,7 +287,7 @@ namespace CityGame.Cars
             {
                 if (o == car) continue;
                 if (o.Q < q || (o.Q == q && o.GetHashCode() < car.GetHashCode())) continue;
-                float gap = o.Q - CarLength - MinGap - q;
+                float gap = o.Q - _carLength - _minGap - q;
                 if (gap < best) best = gap;
             }
 
@@ -298,7 +299,7 @@ namespace CityGame.Cars
         {
             if (!_lanes.TryGetValue(LaneKey(st.Edge, DirOf(st)), out List<Car> list)) return true;
             foreach (Car o in list)
-                if (Mathf.Abs(o.Q - q0) < CarLength + MinGap) return false;
+                if (Mathf.Abs(o.Q - q0) < _carLength + _minGap) return false;
             return true;
         }
 
@@ -402,7 +403,7 @@ namespace CityGame.Cars
         void GoHome(Car car)
         {
             car.State = State.Parked;
-            car.Timer = Random.Range(ParkSeconds.x, ParkSeconds.y);
+            car.Timer = Random.Range(_parkSeconds.x, _parkSeconds.y);
             car.Placed = false;
             car.Speed = 0f;
             car.Braking = false;
@@ -413,12 +414,12 @@ namespace CityGame.Cars
             if (car.Returning)
             {
                 car.State = State.Parked;
-                car.Timer = Random.Range(ParkSeconds.x, ParkSeconds.y);
+                car.Timer = Random.Range(_parkSeconds.x, _parkSeconds.y);
             }
             else
             {
                 car.State = State.Inside;
-                car.Timer = Random.Range(DwellSeconds.x, DwellSeconds.y);
+                car.Timer = Random.Range(_dwellSeconds.x, _dwellSeconds.y);
             }
 
             car.Speed = 0f;
@@ -428,7 +429,7 @@ namespace CityGame.Cars
         /// <summary>Сеть перестроили под машиной: ищем путь от её точки к текущей цели.</summary>
         void Reroute(Car car)
         {
-            FlowSolver.Route r = _flow.RouteFrom(car.Pos, car.Dir, car.GoalCell, RerouteRadius);
+            FlowSolver.Route r = _flow.RouteFrom(car.Pos, car.Dir, car.GoalCell, _rerouteRadius);
             if (r == null || r.Steps.Count == 0)
             {
                 GoHome(car);
@@ -475,10 +476,10 @@ namespace CityGame.Cars
                 float q1 = QOf(e, dir, st.To);
                 bool last = car.Step == car.Route.Steps.Count - 1;
                 bool toNode = st.EndNode >= 0 && !last;
-                float vFree = _flow.EdgeSpeed(e) * SpeedScale;
+                float vFree = _flow.EdgeSpeed(e) * _speedScale;
 
                 // Линия остановки перед узлом: край клетки развилки.
-                float stop = toNode && !car.Cleared ? q1 - (CellSize * 0.5f + CarLength * 0.5f) : q1;
+                float stop = toNode && !car.Cleared ? q1 - (CellSize * 0.5f + _carLength * 0.5f) : q1;
                 float move = vFree * dt;
                 move = Mathf.Min(move, Mathf.Max(0f, GapAhead(car, car.Q)));
                 move = Mathf.Min(move, Mathf.Max(0f, stop - car.Q));
@@ -528,7 +529,7 @@ namespace CityGame.Cars
             if (!EdgeTokenFree(next)) return false;
 
             if (limited)
-                _nodeNext[node.Id] = _now + 1f / Mathf.Max(0.01f, node.JunctionCapacity * CarsPerFlow);
+                _nodeNext[node.Id] = _now + 1f / Mathf.Max(0.01f, node.JunctionCapacity * _carsPerFlow);
             _edgeNext[LaneKey(next.Edge, DirOf(next))] = _now + EdgeHeadway(next.Edge);
             return true;
         }
@@ -603,7 +604,7 @@ namespace CityGame.Cars
                     Vector2 p = Sample(e.Points, s, out tan);
                     fwd = tan * dir;
                     Vector2 rightV = new Vector2(fwd.y, -fwd.x);
-                    float off = e.OneWay != 0 ? 0f : LaneOffset * CellSize;
+                    float off = e.OneWay != 0 ? 0f : _laneOffset * CellSize;
                     target = p + rightV * off;
                 }
                 else
@@ -640,7 +641,7 @@ namespace CityGame.Cars
                 MeshBatch m = upper ? _highBatch : _lowBatch;
                 Vector2 f = car.Dir;
                 Vector2 r = new Vector2(f.y, -f.x);
-                float hl = CarLength * 0.5f, hw = CarWidth * 0.5f;
+                float hl = _carLength * 0.5f, hw = _carWidth * 0.5f;
 
                 m.Local(car.Pos, f, r, -hl, hl, -hw, hw, car.Color);
                 m.Local(car.Pos, f, r, hl * 0.05f, hl * 0.6f, -hw * 0.8f, hw * 0.8f, window);

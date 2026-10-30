@@ -9,7 +9,7 @@ namespace CityGame.City
 
     public sealed class BuildingCardDeck : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
 
         // ──────────────────────────────────────────────────────────
         //  События

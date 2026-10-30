@@ -8,8 +8,8 @@ namespace CityGame.Buildings
     /// </summary>
     public sealed class ServiceOverlay : MonoBehaviour
     {
-        public float CellSize = 1f;
-        public int SortingOrder = -12;
+        public float CellSize { get; set; } = 1f;
+        [SerializeField] int _sortingOrder = -12;
 
         /// <summary>Усиленный показ, пока игрок выбирает место для службы.</summary>
         public bool Emphasis
@@ -91,7 +91,7 @@ namespace CityGame.Buildings
                 _view.AddComponent<MeshFilter>();
                 var r = _view.AddComponent<MeshRenderer>();
                 r.sharedMaterial = _material;
-                r.sortingOrder = SortingOrder;
+                r.sortingOrder = _sortingOrder;
             }
 
             var f = _view.GetComponent<MeshFilter>();

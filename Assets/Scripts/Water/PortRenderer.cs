@@ -6,7 +6,7 @@ namespace CityGame.Water
     /// <summary>Порт: деревянный пирс на воде, контейнеры и портовый кран. Один порт это одна клетка.</summary>
     public sealed class PortRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         public int SortingOrder = -9;
 
         static readonly Color Rim = new Color32(0x7A, 0x5A, 0x3C, 0xFF);

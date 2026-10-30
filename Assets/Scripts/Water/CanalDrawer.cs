@@ -16,9 +16,9 @@ namespace CityGame.Water
     public sealed class CanalDrawer : MonoBehaviour, IRoadStroke
     {
         public Camera Cam;
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         [Tooltip("Насколько дальше в сторону нужно увести палец, чтобы канал повернул, в клетках")]
-        public int TurnThreshold = 2;
+        [SerializeField] int _turnThreshold = 2;
 
         public Func<Vector2, bool> IsPointerBlocked;
 
@@ -201,7 +201,7 @@ namespace CityGame.Water
                 int along = _axisHorizontal ? d.x : d.y;
                 int across = _axisHorizontal ? d.y : d.x;
                 bool turn = across != 0 && (along == 0 ||
-                                            (Mathf.Abs(across) >= TurnThreshold && Mathf.Abs(across) > Mathf.Abs(along)));
+                                            (Mathf.Abs(across) >= _turnThreshold && Mathf.Abs(across) > Mathf.Abs(along)));
                 if (turn)
                 {
                     _axisHorizontal = !_axisHorizontal;

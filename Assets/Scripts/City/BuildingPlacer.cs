@@ -15,25 +15,25 @@ namespace CityGame.Buildings
     /// </summary>
     public sealed class BuildingPlacer : MonoBehaviour
     {
-        public Camera Cam;
-        public float CellSize = 1f;
+        [SerializeField] Camera _cam;
+        public float CellSize { get; set; } = 1f;
 
         [Tooltip("Что ставим сейчас")]
-        public BuildingCategory Category = BuildingCategory.Residential;
-        public ServiceKind Kind = ServiceKind.Ambulance;
-        public bool EraseMode;
+        public BuildingCategory Category { get; set; } = BuildingCategory.Residential;
+        public ServiceKind Kind { get; set; } = ServiceKind.Ambulance;
+        public bool EraseMode { get; set; }
 
-        public Func<Vector2, bool> IsPointerBlocked;
+        public Func<Vector2, bool> IsPointerBlocked { get; set; }
 
         /// <summary>Правила секторов: можно ли строить в этой точке мира.</summary>
-        public Func<Vector2, bool> CanPlaceAt;
+        public Func<Vector2, bool> CanPlaceAt { get; set; }
         public event Action<Vector2Int> PlaceFailedNoMoney;
         public event Action<string> Message;
         Biomes _biomes;
-        public PortMap Ports;
-        public BusMap Buses;
-        public CanalMap Canals;
-        public CellRoads.RampMap Ramps;
+        public PortMap Ports { get; set; }
+        public BusMap Buses { get; set; }
+        public CanalMap Canals { get; set; }
+        public CellRoads.RampMap Ramps { get; set; }
 
         CityModel _model;
         Economy _economy;
@@ -65,7 +65,7 @@ namespace CityGame.Buildings
 
         void Awake()
         {
-            if (Cam == null) Cam = Camera.main;
+            if (_cam == null) _cam = Camera.main;
         }
 
         void OnDisable()
@@ -88,7 +88,7 @@ namespace CityGame.Buildings
 
         void Update()
         {
-            if (_model == null || Cam == null) return;
+            if (_model == null || _cam == null) return;
 
             PointerInput.Poll();
 
@@ -111,8 +111,8 @@ namespace CityGame.Buildings
                 return;
             }
 
-            Vector3 w = Cam.ScreenToWorldPoint(new Vector3(PointerInput.Position.x, PointerInput.Position.y,
-                -Cam.transform.position.z));
+            Vector3 w = _cam.ScreenToWorldPoint(new Vector3(PointerInput.Position.x, PointerInput.Position.y,
+                -_cam.transform.position.z));
             Apply(ToCell(new Vector2(w.x, w.y)));
         }
 

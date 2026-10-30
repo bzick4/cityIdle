@@ -16,11 +16,11 @@ namespace CityGame.Buildings
     /// </summary>
     public sealed class MenuBackdrop : MonoBehaviour
     {
-        public float CellSize = 1f;
-        public float HexSize = 5f;
-        public int OpenRadius = 3;
+        public float CellSize { get; set; } = 1f;
+        [SerializeField] float _hexSize = 5f;
+        [SerializeField] int _openRadius = 3;
         [Tooltip("Ширина видимой карты, единиц мира")]
-        public float Width = 15f;
+        [SerializeField] float _width = 15f;
 
         Camera _cam;
         float _t;
@@ -112,11 +112,11 @@ namespace CityGame.Buildings
             var graph = new RoadGraph();
             _sync = new CellRoadGraphSync(map, graph, CellSize);
 
-            var sectors = new SectorMap(HexSize);
+            var sectors = new SectorMap(_hexSize);
             var open = new List<HexCoord>();
-            for (int q = -OpenRadius; q <= OpenRadius; q++)
-            for (int r = -OpenRadius; r <= OpenRadius; r++)
-                if ((Mathf.Abs(q) + Mathf.Abs(r) + Mathf.Abs(q + r)) / 2 <= OpenRadius) open.Add(new HexCoord(q, r));
+            for (int q = -_openRadius; q <= _openRadius; q++)
+            for (int r = -_openRadius; r <= _openRadius; r++)
+                if ((Mathf.Abs(q) + Mathf.Abs(r) + Mathf.Abs(q + r)) / 2 <= _openRadius) open.Add(new HexCoord(q, r));
             sectors.Load(open);
 
             var biomeMap = new BiomeMap { Seed = seed };
@@ -159,7 +159,7 @@ namespace CityGame.Buildings
             _t += Time.unscaledDeltaTime;
 
             float aspect = Mathf.Max(0.1f, (float)Screen.width / Mathf.Max(1, Screen.height));
-            float width = Width + Mathf.Sin(_t * 0.11f) * 1.5f;
+            float width = _width + Mathf.Sin(_t * 0.11f) * 1.5f;
             _cam.orthographicSize = width * 0.5f / aspect;
             _cam.transform.position = new Vector3(Mathf.Sin(_t * 0.06f) * 5f, Mathf.Cos(_t * 0.045f) * 6f, -10f);
         }

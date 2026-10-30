@@ -6,7 +6,7 @@ namespace CityGame.City
 {
     public sealed class BuildingTapper : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         public System.Func<Vector2, bool> IsPointerBlocked;
 
         public event System.Action<BuildingCell> Tapped;

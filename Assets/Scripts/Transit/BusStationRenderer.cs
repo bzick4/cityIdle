@@ -7,7 +7,7 @@ namespace CityGame.Transit
     /// <summary>Автостанция: площадка, навес с лавкой и синий знак. Навес повёрнут от дороги, бордюр к ней.</summary>
     public sealed class BusStationRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         public int SortingOrder = -9;
 
         static readonly Color Pad = new Color32(0xE3, 0xE0, 0xD8, 0xFF);

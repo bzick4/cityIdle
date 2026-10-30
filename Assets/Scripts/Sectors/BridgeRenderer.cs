@@ -10,10 +10,10 @@ namespace CityGame.Sectors
     /// </summary>
     public sealed class BridgeRenderer : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         [Tooltip("Ширина плиты моста, доля клетки")]
-        public float DeckWidth = 0.8f;
-        public int SortingOrder = -3;
+        [SerializeField] float _deckWidth = 0.8f;
+        [SerializeField] int _sortingOrder = -3;
 
         CellRoadMap _map;
         Biomes _biomes;
@@ -45,7 +45,7 @@ namespace CityGame.Sectors
             if (_map == null) return;
             _batch.Clear();
             float cs = CellSize;
-            float dw = cs * DeckWidth * 0.5f;
+            float dw = cs * _deckWidth * 0.5f;
             float rail = cs * 0.04f;
             Vector2 so = new Vector2(0.05f, -0.08f) * cs;
 
@@ -99,7 +99,7 @@ namespace CityGame.Sectors
                 _view.AddComponent<MeshFilter>();
                 var mr = _view.AddComponent<MeshRenderer>();
                 mr.sharedMaterial = new Material(Shader.Find("Sprites/Default")) { color = Color.white };
-                mr.sortingOrder = SortingOrder;
+                mr.sortingOrder = _sortingOrder;
             }
 
             var f = _view.GetComponent<MeshFilter>();

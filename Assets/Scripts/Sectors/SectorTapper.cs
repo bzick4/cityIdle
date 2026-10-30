@@ -10,7 +10,8 @@ namespace CityGame.Sectors
     /// </summary>
     public sealed class SectorTapper : MonoBehaviour
     {
-        public Camera Cam;
+        [SerializeField] Camera _cam;
+        public Camera _cam => _cam;
         public Func<Vector2, bool> IsPointerBlocked;
 
         SectorMap _map;
@@ -29,7 +30,7 @@ namespace CityGame.Sectors
 
         void Awake()
         {
-            if (Cam == null) Cam = Camera.main;
+            if (_cam == null) _cam = Camera.main;
         }
 
         void OnDisable()
@@ -54,14 +55,14 @@ namespace CityGame.Sectors
 
         void Update()
         {
-            if (_map == null || Cam == null) return;
+            if (_map == null || _cam == null) return;
 
             PointerInput.Poll();
             if (PointerInput.Gesture || !PointerInput.Down) return;
             if (IsPointerBlocked != null && IsPointerBlocked(PointerInput.Position)) return;
 
-            Vector3 w = Cam.ScreenToWorldPoint(new Vector3(PointerInput.Position.x, PointerInput.Position.y,
-                -Cam.transform.position.z));
+            Vector3 w = _cam.ScreenToWorldPoint(new Vector3(PointerInput.Position.x, PointerInput.Position.y,
+                -_cam.transform.position.z));
             HexCoord h = _map.SectorAt(new Vector2(w.x, w.y));
             _renderer.SetPending(_map.CanOpen(h) ? h : (HexCoord?)null);
         }

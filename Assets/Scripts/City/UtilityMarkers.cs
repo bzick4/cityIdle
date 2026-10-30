@@ -5,7 +5,7 @@ namespace CityGame.Buildings
     /// <summary>Значки над зданиями без тока (жёлтая молния) и без воды (синяя капля).</summary>
     public sealed class UtilityMarkers : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         public int SortingOrder = -4;
 
         CityModel _model;

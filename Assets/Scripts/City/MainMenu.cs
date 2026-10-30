@@ -18,11 +18,11 @@ namespace CityGame.Buildings
         public string Title = "CITY BUILDER";
         public string Subtitle = "расслабленный градостроитель";
 
-        public Color Cream = new Color32(0xF4, 0xEA, 0xDC, 0xFF);
-        public Color Accent = new Color32(0xFF, 0xB8, 0x34, 0xFF);
-        public Color Ink = new Color32(0x1B, 0x1F, 0x2A, 0xFF);
-        public Color ButtonFill = new Color32(0x27, 0x31, 0x45, 0xEB);
-        public Color ButtonRim = new Color32(0x5A, 0x68, 0x84, 0xCC);
+        [SerializeField] Color _cream = new Color32(0xF4, 0xEA, 0xDC, 0xFF);
+        [SerializeField] Color _accent = new Color32(0xFF, 0xB8, 0x34, 0xFF);
+        [SerializeField] Color _ink = new Color32(0x1B, 0x1F, 0x2A, 0xFF);
+        [SerializeField] Color _buttonFill = new Color32(0x27, 0x31, 0x45, 0xEB);
+        [SerializeField] Color _buttonRim = new Color32(0x5A, 0x68, 0x84, 0xCC);
 
         CitySystem _city;
         SaveData _save;
@@ -183,30 +183,30 @@ namespace CityGame.Buildings
             float baseY = h * 0.20f;
 
             // Дуга и силуэт города.
-            Tex(new Rect(cx - 78f, baseY - 64f, 156f, 64f * 1.0f), _arc, Cream);
+            Tex(new Rect(cx - 78f, baseY - 64f, 156f, 64f * 1.0f), _arc, _cream);
             float[,] b =
             {
                 { -62, 10, 14 }, { -50, 14, 24 }, { -34, 16, 32 }, { -14, 20, 62 },
                 { 8, 16, 34 }, { 25, 14, 24 }, { 40, 12, 17 }
             };
             for (int i = 0; i < b.GetLength(0); i++)
-                Fill(new Rect(cx + b[i, 0], baseY - b[i, 2] - 2f, b[i, 1], b[i, 2]), Cream);
-            Fill(new Rect(cx - 6f, baseY - 62f - 16f, 4f, 16f), Cream);
-            Fill(new Rect(cx - 70f, baseY - 2f, 140f, 2f), Cream);
+                Fill(new Rect(cx + b[i, 0], baseY - b[i, 2] - 2f, b[i, 1], b[i, 2]), _cream);
+            Fill(new Rect(cx - 6f, baseY - 62f - 16f, 4f, 16f), _cream);
+            Fill(new Rect(cx - 70f, baseY - 2f, 140f, 2f), _cream);
 
             // Название.
             string spaced = Spaced(Title);
             Rect t = new Rect(0, baseY + 8f, w, 40f);
             Label(new Rect(t.x + 1.5f, t.y + 2f, t.width, t.height), spaced, _title, new Color(0, 0, 0, 0.4f));
-            Label(t, spaced, _title, Cream);
+            Label(t, spaced, _title, _cream);
 
             // Линия с шестиугольником.
             float ly = baseY + 58f;
-            Color line = new Color(Cream.r, Cream.g, Cream.b, 0.55f);
+            Color line = new Color(_cream.r, _cream.g, _cream.b, 0.55f);
             Fill(new Rect(cx - 90f, ly, 66f, 1f), line);
             Fill(new Rect(cx + 24f, ly, 66f, 1f), line);
-            Tex(new Rect(cx - 8f, ly - 8f, 16f, 16f), _iconHex, Cream);
-            Label(new Rect(0, ly + 12f, w, 22f), Subtitle, _sub, new Color(Cream.r, Cream.g, Cream.b, 0.8f));
+            Tex(new Rect(cx - 8f, ly - 8f, 16f, 16f), _iconHex, _cream);
+            Label(new Rect(0, ly + 12f, w, 22f), Subtitle, _sub, new Color(_cream.r, _cream.g, _cream.b, 0.8f));
         }
 
         void DrawButtons(float w, float h, float bottomInset)
@@ -218,11 +218,11 @@ namespace CityGame.Buildings
             float y2 = h - bottomInset - 28f - bh;
             float y1 = y2 - gap - bh;
 
-            Color dimInk = new Color(Cream.r, Cream.g, Cream.b, 0.4f);
+            Color dimInk = new Color(_cream.r, _cream.g, _cream.b, 0.4f);
 
             var fresh = new Rect(x, y1, bw, bh);
             if (MenuButton(fresh, _iconNew, "Новый город", "рельеф создаётся случайно",
-                    Accent, new Color(1f, 0.85f, 0.5f, 0.9f), Ink, !_confirm))
+                    _accent, new Color(1f, 0.85f, 0.5f, 0.9f), _ink, !_confirm))
             {
                 if (_hasSave) _confirm = true;
                 else _city.NewGame();
@@ -232,9 +232,9 @@ namespace CityGame.Buildings
                 ? string.Format("{0:0} $ · зданий {1} · {2:dd.MM HH:mm}", _save.money, _save.buildings.Count, SaveSystem.LastWrite)
                 : "нет сохранённого города";
             var cont = new Rect(x, y2, bw, bh);
-            Color fill = _hasSave ? ButtonFill : new Color(ButtonFill.r, ButtonFill.g, ButtonFill.b, 0.6f);
-            if (MenuButton(cont, _iconFolder, "Продолжить", info, fill, ButtonRim,
-                    _hasSave ? Cream : dimInk, _hasSave && !_confirm))
+            Color fill = _hasSave ? _buttonFill : new Color(_buttonFill.r, _buttonFill.g, _buttonFill.b, 0.6f);
+            if (MenuButton(cont, _iconFolder, "Продолжить", info, fill, _buttonRim,
+                    _hasSave ? _cream : dimInk, _hasSave && !_confirm))
                 _city.ContinueGame();
         }
 
@@ -243,23 +243,23 @@ namespace CityGame.Buildings
             float bw = Mathf.Min(w - 48f, 320f);
             var box = new Rect((w - bw) * 0.5f, h * 0.36f, bw, 150f);
             Fill(new Rect(0, 0, w, h), new Color(0.04f, 0.05f, 0.09f, 0.55f));
-            Plate(box, new Color32(0x1F, 0x27, 0x3A, 0xF5), ButtonRim);
+            Plate(box, new Color32(0x1F, 0x27, 0x3A, 0xF5), _buttonRim);
             Label(new Rect(box.x + 14f, box.y + 12f, box.width - 28f, 54f),
-                "Начать новый город? Старый город будет удалён.", _text, Cream);
+                "Начать новый город? Старый город будет удалён.", _text, _cream);
 
             var yes = new Rect(box.x + 14f, box.y + 84f, box.width * 0.5f - 21f, 48f);
             var no = new Rect(box.x + box.width * 0.5f + 7f, box.y + 84f, box.width * 0.5f - 21f, 48f);
 
-            Plate(yes, Accent, new Color(1f, 0.85f, 0.5f, 0.9f));
-            Label(yes, "Начать", _text, Ink);
+            Plate(yes, _accent, new Color(1f, 0.85f, 0.5f, 0.9f));
+            Label(yes, "Начать", _text, _ink);
             if (GUI.Button(yes, GUIContent.none, GUIStyle.none))
             {
                 _confirm = false;
                 _city.NewGame();
             }
 
-            Plate(no, ButtonFill, ButtonRim);
-            Label(no, "Отмена", _text, Cream);
+            Plate(no, _buttonFill, _buttonRim);
+            Label(no, "Отмена", _text, _cream);
             if (GUI.Button(no, GUIContent.none, GUIStyle.none)) _confirm = false;
         }
     }

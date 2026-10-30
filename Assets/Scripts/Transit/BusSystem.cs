@@ -32,23 +32,23 @@ namespace CityGame.Transit
     /// </summary>
     public sealed class BusSystem : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         [Tooltip("Скорость автобуса, клеток в секунду")]
-        public float Speed = 1.1f;
+        [SerializeField] float _speed = 1.1f;
         [Tooltip("Сколько секунд автобус стоит на остановке")]
-        public float DockSeconds = 2.5f;
+        [SerializeField] float _dockSeconds = 2.5f;
         [Tooltip("Доход одной станции у дороги в секунду, даже если ехать некуда")]
-        public float StationIncome = 0.3f;
+        [SerializeField] float _stationIncome = 0.3f;
         [Tooltip("Добавка в секунду за станцию, до которой ходит автобус")]
-        public float ConnectedBonus = 1.5f;
+        [SerializeField] float _connectedBonus = 1.5f;
         [Tooltip("Сколько клеток дороги просматриваем от станции")]
-        public int SearchLimit = 4000;
+        [SerializeField] int _searchLimit = 4000;
         [Tooltip("Ближайших станций на каждую станцию, к которым ходят автобусы")]
-        public int LinksPerStation = 2;
+        [SerializeField] int _linksPerStation = 2;
         [Tooltip("Смещение к правому краю дороги, доля клетки")]
-        public float LaneOffset = 0.125f;
-        public float BusLength = 0.62f;
-        public float BusWidth = 0.22f;
+        [SerializeField] float _laneOffset = 0.125f;
+        [SerializeField] float _busLength = 0.62f;
+        [SerializeField] float _busWidth = 0.22f;
 
         sealed class Bus
         {
@@ -90,7 +90,7 @@ namespace CityGame.Transit
                 int active = 0;
                 foreach (Vector2Int s in _stations.Cells)
                     if (BusRoutes.TouchesRoad(_roads, s)) active++;
-                return active * StationIncome + _connected.Count * ConnectedBonus;
+                return active * _stationIncome + _connected.Count * _connectedBonus;
             }
         }
 
@@ -158,7 +158,7 @@ namespace CityGame.Transit
                 {
                     var found = new List<KeyValuePair<Vector2Int, List<Vector2Int>>>();
                     Search(start, found);
-                    for (int i = 0; i < found.Count && i < LinksPerStation; i++)
+                    for (int i = 0; i < found.Count && i < _linksPerStation; i++)
                     {
                         Vector2Int end = found[i].Key;
                         if (!made.Add(Key(start, end))) continue;
@@ -219,7 +219,7 @@ namespace CityGame.Transit
 
             var linked = new HashSet<Vector2Int>();
             int expanded = 0;
-            while (queue.Count > 0 && expanded < SearchLimit)
+            while (queue.Count > 0 && expanded < _searchLimit)
             {
                 Vector2Int cur = queue.Dequeue();
                 expanded++;
@@ -276,8 +276,8 @@ namespace CityGame.Transit
                 var glow = new GameObject("Bus lights");
                 glow.transform.SetParent(go.transform, false);
                 var lb = new MeshBatch();
-                float hl = BusLength * CellSize * 0.5f;
-                float hw = BusWidth * CellSize * 0.5f;
+                float hl = _busLength * CellSize * 0.5f;
+                float hw = _busWidth * CellSize * 0.5f;
                 LightMesh.Glow(lb, new Vector2(hl + CellSize * 0.1f, hw * 0.55f), CellSize * 0.22f, new Color(1f, 0.95f, 0.72f, 0.5f), 8);
                 LightMesh.Glow(lb, new Vector2(hl + CellSize * 0.1f, -hw * 0.55f), CellSize * 0.22f, new Color(1f, 0.95f, 0.72f, 0.5f), 8);
                 LightMesh.Glow(lb, Vector2.zero, CellSize * 0.4f, new Color(1f, 0.9f, 0.6f, 0.22f), 10);
@@ -296,8 +296,8 @@ namespace CityGame.Transit
 
         void BuildBus(MeshBatch b, Color body, float cs)
         {
-            float hl = BusLength * cs * 0.5f;
-            float hw = BusWidth * cs * 0.5f;
+            float hl = _busLength * cs * 0.5f;
+            float hw = _busWidth * cs * 0.5f;
             Vector2 o = Vector2.zero;
             Vector2 u = Vector2.right, v = Vector2.up;
             b.Local(o + new Vector2(0.03f, -0.04f) * cs, u, v, -hl, hl, -hw, hw, new Color(0f, 0f, 0f, 0.18f));
@@ -342,7 +342,7 @@ namespace CityGame.Transit
             // Едем по правой полосе: сдвиг вправо от курса.
             float rad = sh.Angle * Mathf.Deg2Rad;
             Vector2 right = new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad));
-            pos += right * (LaneOffset * CellSize);
+            pos += right * (_laneOffset * CellSize);
 
             sh.Tf.localPosition = new Vector3(pos.x, pos.y, 0f);
             sh.Tf.localRotation = Quaternion.Euler(0f, 0f, sh.Angle);
@@ -363,18 +363,18 @@ namespace CityGame.Transit
                 }
                 else
                 {
-                    sh.S += sh.Dir * Speed * CellSize * dt;
+                    sh.S += sh.Dir * _speed * CellSize * dt;
                     if (sh.S >= sh.Len)
                     {
                         sh.S = sh.Len;
                         sh.Dir = -1;
-                        sh.Wait = DockSeconds;
+                        sh.Wait = _dockSeconds;
                     }
                     else if (sh.S <= 0f)
                     {
                         sh.S = 0f;
                         sh.Dir = 1;
-                        sh.Wait = DockSeconds;
+                        sh.Wait = _dockSeconds;
                     }
                 }
 

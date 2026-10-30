@@ -13,20 +13,20 @@ namespace CityGame.Water
     /// </summary>
     public sealed class ShipSystem : MonoBehaviour
     {
-        public float CellSize = 1f;
+        public float CellSize { get; set; } = 1f;
         [Tooltip("Скорость корабля, клеток в секунду")]
-        public float Speed = 1.4f;
+        [SerializeField] float _speed = 1.4f;
         [Tooltip("Сколько секунд корабль стоит у причала")]
-        public float DockSeconds = 2.5f;
+        [SerializeField] float _dockSeconds = 2.5f;
         [Tooltip("Доход одного порта в секунду, даже если плыть некуда")]
-        public float PortIncome = 0.4f;
+        [SerializeField] float _portIncome = 0.4f;
         [Tooltip("Добавка в секунду за порт, до которого доплывает корабль")]
-        public float ConnectedBonus = 2f;
+        [SerializeField] float _connectedBonus = 2f;
         [Tooltip("Сколько клеток воды просматриваем от порта")]
-        public int SearchLimit = 6000;
+        [SerializeField] int _searchLimit = 6000;
         [Tooltip("Ближайших портов на каждый порт, к которым ходят корабли")]
-        public int LinksPerPort = 2;
-        public int SortingOrder = -6;
+        [SerializeField] int _linksPerPort = 2;
+        [SerializeField] int _sortingOrder = -6;
 
         sealed class Ship
         {
@@ -62,7 +62,7 @@ namespace CityGame.Water
         public int ConnectedPorts => _connected.Count;
 
         public float IncomePerSecond =>
-            _ports == null ? 0f : _ports.Count * PortIncome + _connected.Count * ConnectedBonus;
+            _ports == null ? 0f : _ports.Count * _portIncome + _connected.Count * _connectedBonus;
 
         public void Bind(PortMap ports, CanalMap canals, Biomes biomes, SectorMap sectors, CityModel model, DayNight day)
         {
@@ -149,7 +149,7 @@ namespace CityGame.Water
                     var found = new List<Vector2Int>();
                     var parent = new Dictionary<Vector2Int, Vector2Int>();
                     Search(start, found, parent);
-                    for (int i = 0; i < found.Count && i < LinksPerPort; i++)
+                    for (int i = 0; i < found.Count && i < _linksPerPort; i++)
                     {
                         Vector2Int end = found[i];
                         if (!made.Add(Key(start, end))) continue;
@@ -204,7 +204,7 @@ namespace CityGame.Water
             var seen = new HashSet<Vector2Int> { start };
             queue.Enqueue(start);
             int expanded = 0;
-            while (queue.Count > 0 && expanded < SearchLimit)
+            while (queue.Count > 0 && expanded < _searchLimit)
             {
                 Vector2Int cur = queue.Dequeue();
                 expanded++;
@@ -248,7 +248,7 @@ namespace CityGame.Water
             go.AddComponent<MeshFilter>().sharedMesh = batch.ToMesh();
             var mr = go.AddComponent<MeshRenderer>();
             mr.sharedMaterial = _material;
-            mr.sortingOrder = SortingOrder;
+            mr.sortingOrder = _sortingOrder;
 
             if (_day != null)
             {
@@ -352,18 +352,18 @@ namespace CityGame.Water
                 }
                 else
                 {
-                    sh.S += sh.Dir * Speed * CellSize * dt;
+                    sh.S += sh.Dir * _speed * CellSize * dt;
                     if (sh.S >= sh.Len)
                     {
                         sh.S = sh.Len;
                         sh.Dir = -1;
-                        sh.Wait = DockSeconds;
+                        sh.Wait = _dockSeconds;
                     }
                     else if (sh.S <= 0f)
                     {
                         sh.S = 0f;
                         sh.Dir = 1;
-                        sh.Wait = DockSeconds;
+                        sh.Wait = _dockSeconds;
                     }
                 }
 

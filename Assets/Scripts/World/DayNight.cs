@@ -4,7 +4,7 @@ using CityGame.Buildings;
 namespace CityGame.World
 {
     /// <summary>
-    /// Смена дня и ночи. Часы идут сами: сутки занимают DayLengthSeconds реальных секунд.
+    /// Смена дня и ночи. Часы идут сами: сутки занимают _dayLengthSeconds реальных секунд.
     /// Ночью поверх мира ложится тёмно-синее полотно, а огни (фонари, окна, фары, корабли)
     /// рисуются выше него материалом LightMaterial, прозрачность которого растёт с темнотой.
     /// </summary>
@@ -14,13 +14,13 @@ namespace CityGame.World
         public const int LightOrder = 61;
 
         [Tooltip("Сколько реальных секунд длятся игровые сутки")]
-        public float DayLengthSeconds = 240f;
+        [SerializeField] float _dayLengthSeconds = 240f;
         [Tooltip("Час начала новой игры, 0..24")]
         [Range(0f, 24f)] public float StartHour = 9f;
         [Tooltip("Насколько темно в самую тёмную ночь, 0..1")]
         [Range(0.2f, 0.85f)] public float NightStrength = 0.5f;
         [Tooltip("Если включить, время стоит на месте")]
-        public bool Frozen;
+        [SerializeField] bool _frozen;
 
         public float Hour { get; private set; }
 
@@ -98,8 +98,8 @@ namespace CityGame.World
 
         void Update()
         {
-            if (!Frozen && DayLengthSeconds > 1f)
-                Hour = Mathf.Repeat(Hour + Time.deltaTime * 24f / DayLengthSeconds, 24f);
+            if (!_frozen && _dayLengthSeconds > 1f)
+                Hour = Mathf.Repeat(Hour + Time.deltaTime * 24f / _dayLengthSeconds, 24f);
             Apply();
         }
 

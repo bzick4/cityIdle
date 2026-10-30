@@ -40,11 +40,11 @@ namespace CityGame.Buildings
     public sealed class CitySystem : MonoBehaviour
     {
         [Tooltip("Размер клетки. Одна клетка это одна постройка: дорога или здание")]
-        public float CellSize = 1f;
+        [field: SerializeField] public float CellSize { get; private set; } = 1f;
         [Tooltip("Расстояние от центра сектора до угла")]
-        public float HexSize = 5f;
+        [field: SerializeField] public float HexSize { get; private set; } = 5f;
         [Tooltip("Доля ширины соседних секторов, видимая по краям при старте новой карты")]
-        [Range(0f, 0.5f)] public float InitialNeighborVisibleFraction = 0.3f;
+        [field: SerializeField] [Range(0f, 0.5f)] public float InitialNeighborVisibleFraction { get; private set; } = 0.3f;
 
         public CityModel Model { get; private set; }
         public Economy Economy { get; private set; }
@@ -105,7 +105,7 @@ namespace CityGame.Buildings
         public EventSystem Events { get; private set; }
 
         [Tooltip("Как часто сохранять город, секунд")]
-        public float AutosaveSeconds = 20f;
+        [SerializeField] float _autosaveSeconds = 20f;
 
         public bool Started { get; private set; }
 
@@ -294,7 +294,7 @@ namespace CityGame.Buildings
             BusStations.Load(busCells);
             if (data.dayHour >= 0f) Day.SetHour(data.dayHour);
 
-            Economy.Money = data.money;
+            Economy.RestoreMoney(data.money);
             if (data.camWidth > 0f) Rig.SetView(new Vector2(data.camX, data.camY), data.camWidth);
         }
 
@@ -506,7 +506,7 @@ namespace CityGame.Buildings
             evRenderer.Bind(Events);
 
             Started = true;
-            InvokeRepeating(nameof(AutoSave), AutosaveSeconds, AutosaveSeconds);
+            InvokeRepeating(nameof(AutoSave), _autosaveSeconds, _autosaveSeconds);
             if (data != null) Apply(data);
             else Rig.SetStartView(Vector2.zero, HexSize, InitialNeighborVisibleFraction);
 

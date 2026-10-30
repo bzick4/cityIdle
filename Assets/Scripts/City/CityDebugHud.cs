@@ -20,10 +20,10 @@ namespace CityGame.Buildings
         const float RefHeight = 800f;
 
         /// <summary>Отладочные строки (ввод, биом) в панели информации. Выключи, когда всё заработает.</summary>
-        public bool ShowDiagnostics = true;
+        [SerializeField] bool _showDiagnostics = true;
 
-        public Color BarColor = new Color32(0xBF, 0xBF, 0xBF, 0xFF);
-        public Color ShopColor = new Color32(0x8F, 0xE0, 0xCE, 0xFF);
+        [SerializeField] Color _barColor = new Color32(0xBF, 0xBF, 0xBF, 0xFF);
+        [SerializeField] Color _shopColor = new Color32(0x8F, 0xE0, 0xCE, 0xFF);
         public Color PanelColor = new Color32(0xE4, 0xE4, 0xE4, 0xF2);
 
         enum Popup { None, Tools, Info }
@@ -318,8 +318,8 @@ namespace CityGame.Buildings
             for (int i = 0; i < _serviceIcons.Length; i++) _serviceIcons[i] = ToolIcons.MakeService((ServiceKind)i);
             _junctionIcons = new Texture2D[Enum.GetValues(typeof(JunctionType)).Length];
             for (int i = 0; i < _junctionIcons.Length; i++) _junctionIcons[i] = ToolIcons.MakeJunction((JunctionType)i);
-            _pill = Tinted(_pillTex, BarColor, 32);
-            _circle = Tinted(_circleTex, ShopColor, 32);
+            _pill = Tinted(_pillTex, _barColor, 32);
+            _circle = Tinted(_circleTex, _shopColor, 32);
             _panel = Tinted(_panelTex, PanelColor, 16);
             _lbl = Label(14, TextAnchor.UpperLeft);
             _lblTile = Label(10, TextAnchor.UpperCenter);
@@ -376,7 +376,7 @@ namespace CityGame.Buildings
             _barRect = new Rect(margin, barY, w - 2f * margin, barH);
 
             // Полоска, справа бюджет и инструмент.
-            Draw(_barRect, _pill, BarColor);
+            Draw(_barRect, _pill, _barColor);
             var textRect = new Rect(margin + barH + 4f, barY + 6f, w - 2f * margin - barH - 24f, barH - 12f);
             GUI.Label(new Rect(textRect.x, textRect.y, textRect.width, 28f),
                 string.Format("{0:0} $   +{1:0.0}/с", _city.Economy.Money, _city.Economy.IncomePerSecond), _lblBig);
@@ -394,7 +394,7 @@ namespace CityGame.Buildings
             var shop = new Rect(margin, barY, barH, barH);
             Anchors["shop"] = shop;
             Anchors["info"] = new Rect(margin + barH, barY, w - 2f * margin - barH, barH);
-            Draw(shop, _circle, ShopColor);
+            Draw(shop, _circle, _shopColor);
             bool deckShowing = _city.CardDeck != null && _city.CardDeck.IsVisible;
             GUI.Label(shop, (deckShowing || _popup == Popup.Tools) ? "×" : "$", _lblShop);
             if (GUI.Button(shop, GUIContent.none, GUIStyle.none))
@@ -479,7 +479,7 @@ namespace CityGame.Buildings
             var ok = new Rect(_strokeRect.x + 14f, _strokeRect.y + 60f + extra, bw, 40f);
             Anchors["confirm"] = ok;
             var cancel = new Rect(ok.xMax + gap, ok.y, _strokeRect.width - 28f - gap - bw, 40f);
-            if (DrawActionButton(ok, "ПОДТВЕРДИТЬ", affordable ? ShopColor : new Color32(0xD8, 0xDB, 0xDE, 0xFF),
+            if (DrawActionButton(ok, "ПОДТВЕРДИТЬ", affordable ? _shopColor : new Color32(0xD8, 0xDB, 0xDE, 0xFF),
                     new Color32(0x2C, 0x3A, 0x40, 0xFF), affordable))
                 stroke.Confirm();
             if (DrawActionButton(cancel, "ОТМЕНА", new Color32(0xF7, 0xF7, 0xF7, 0xFF),
@@ -549,7 +549,7 @@ namespace CityGame.Buildings
             var open = new Rect(_dialogRect.x + 14f, _dialogRect.y + 78f, bw, 40f);
             Anchors["open"] = open;
             var cancel = new Rect(open.xMax + gap, open.y, _dialogRect.width - 28f - gap - bw, 40f);
-            if (DrawActionButton(open, "ОТКРЫТЬ", ShopColor, new Color32(0x2C, 0x3A, 0x40, 0xFF), true))
+            if (DrawActionButton(open, "ОТКРЫТЬ", _shopColor, new Color32(0x2C, 0x3A, 0x40, 0xFF), true))
                 _city.Tapper.ConfirmPending();
             if (DrawActionButton(cancel, "ОТМЕНА", new Color32(0xF7, 0xF7, 0xF7, 0xFF),
                     new Color32(0x3B, 0x46, 0x52, 0xFF), true))
@@ -665,7 +665,7 @@ namespace CityGame.Buildings
                     y0 + (i / columns) * (cardH + gap), cardW, cardH);
                 Anchors["tool:" + tool] = r;
                 bool selected = _city.CurrentTool == tool;
-                Draw(r, _panel, selected ? ShopColor : new Color32(0xF7, 0xF7, 0xF4, 0xFF));
+                Draw(r, _panel, selected ? _shopColor : new Color32(0xF7, 0xF7, 0xF4, 0xFF));
                 float iconSize = 32f;
                 GUI.DrawTexture(new Rect(r.x + (r.width - iconSize) * 0.5f, r.y + 4f, iconSize, iconSize),
                     _icons[iconIndex], ScaleMode.ScaleToFit, true);
@@ -691,7 +691,7 @@ namespace CityGame.Buildings
                 Rect r = new Rect(x0 + n * (cardW + gap), y, cardW, cardH);
                 Anchors["service:" + i] = r;
                 Draw(r, _panel, _city.CurrentTool == Tool.Service && _city.CurrentService == kind
-                    ? ShopColor : new Color32(0xF7, 0xF7, 0xF4, 0xFF));
+                    ? _shopColor : new Color32(0xF7, 0xF7, 0xF4, 0xFF));
                 float iconSize = 36f;
                 GUI.DrawTexture(new Rect(r.x + (r.width - iconSize) * 0.5f, r.y + 4f, iconSize, iconSize),
                     _serviceIcons[i], ScaleMode.ScaleToFit, true);
@@ -719,7 +719,7 @@ namespace CityGame.Buildings
             var districts = _city.Model.Districts;
             int rows = Mathf.Min(districts.Count, 6);
             int extra = (_city.Flow.UnconnectedDistricts > 0 ? 1 : 0) + 1;
-            float diagH = ShowDiagnostics ? 34f : 0f;
+            float diagH = _showDiagnostics ? 34f : 0f;
             float panelH = 10f + 38f + (rows + extra) * 20f + (rows + extra > 0 ? 6f : 0f) + diagH + 8f;
             _popupRect = new Rect(8f, top - panelH, w - 16f, panelH);
             Draw(_popupRect, _panel, PanelColor);
@@ -734,12 +734,12 @@ namespace CityGame.Buildings
             // Переключатели в виде таких же плашек, как кнопки меню: включённый залит цветом магазина.
             bool cars = _city.Traffic.Visible;
             var carsRect = new Rect(x, y, 96f, 32f);
-            if (DrawActionButton(carsRect, cars ? "АВТО ✓" : "АВТО", cars ? ShopColor : light, cars ? inkOn : ink, true))
+            if (DrawActionButton(carsRect, cars ? "АВТО ✓" : "АВТО", cars ? _shopColor : light, cars ? inkOn : ink, true))
                 _city.Traffic.Visible = !cars;
 
             bool heat = _city.Heatmap.Visible;
             var heatRect = new Rect(carsRect.xMax + 6f, y, 116f, 32f);
-            if (DrawActionButton(heatRect, heat ? "НАГРУЗКА ✓" : "НАГРУЗКА", heat ? ShopColor : light, heat ? inkOn : ink, true))
+            if (DrawActionButton(heatRect, heat ? "НАГРУЗКА ✓" : "НАГРУЗКА", heat ? _shopColor : light, heat ? inkOn : ink, true))
                 _city.Heatmap.Visible = !heat;
 
             var helpRect = new Rect(heatRect.xMax + 6f, y, 66f, 32f);
@@ -782,7 +782,7 @@ namespace CityGame.Buildings
                 y += 20f;
             }
 
-            if (ShowDiagnostics)
+            if (_showDiagnostics)
             {
                 Vector2 p = CityGame.Roads.PointerInput.Position;
                 Camera cam = _city.Rig.Cam;
@@ -845,7 +845,7 @@ namespace CityGame.Buildings
             float applyWidth = (rowWidth - gap) * 0.62f;
             Rect applyRect = new Rect(16f, panelY + 92f, applyWidth, 38f);
             Rect cancelRect = new Rect(applyRect.xMax + gap, panelY + 92f, rowWidth - applyWidth - gap, 38f);
-            if (DrawActionButton(applyRect, applyText, canApply ? ShopColor : new Color32(0xD2, 0xD8, 0xD5, 0xFF),
+            if (DrawActionButton(applyRect, applyText, canApply ? _shopColor : new Color32(0xD2, 0xD8, 0xD5, 0xFF),
                     canApply ? new Color32(0x2C, 0x3A, 0x40, 0xFF) : new Color32(0x7D, 0x85, 0x84, 0xFF), canApply))
                 jt.Apply();
             if (DrawActionButton(cancelRect, "Отмена", new Color32(0xF7, 0xF7, 0xF7, 0xFF),
@@ -856,7 +856,7 @@ namespace CityGame.Buildings
 
         bool DrawOptionCard(Rect r, bool selected, Texture2D icon, string title, string detail)
         {
-            Color fill = selected ? ShopColor : new Color32(0xF7, 0xF7, 0xF7, 0xFF);
+            Color fill = selected ? _shopColor : new Color32(0xF7, 0xF7, 0xF7, 0xFF);
             Draw(r, _panel, fill);
             if (r.width < 90f)
             {

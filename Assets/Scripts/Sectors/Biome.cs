@@ -97,16 +97,16 @@ namespace CityGame.Sectors
     /// </summary>
     public sealed class BiomeMap
     {
-        public int Seed = 7;
+        [SerializeField] int _seed = 7;
 
         public Biome BiomeOf(HexCoord h)
         {
             float x = h.Q + h.R * 0.5f;
             float y = h.R * 0.866f;
-            float height = Noise(x * 0.45f, y * 0.45f, Seed);
-            float temp = Noise(x * 0.35f + 100f, y * 0.35f + 100f, Seed + 1);
+            float height = Noise(x * 0.45f, y * 0.45f, _seed);
+            float temp = Noise(x * 0.35f + 100f, y * 0.35f + 100f, _seed + 1);
 
-            float wet = Noise(x * 0.40f + 300f, y * 0.40f - 200f, Seed + 2);
+            float wet = Noise(x * 0.40f + 300f, y * 0.40f - 200f, _seed + 2);
 
             if (height > 0.68f) return Biome.Mountain;
             if (wet > 0.70f) return Biome.Sea;
