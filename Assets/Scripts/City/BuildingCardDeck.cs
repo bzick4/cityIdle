@@ -547,12 +547,22 @@ namespace CityGame.City
             bool    held = GetPointerHeld();
             bool    up   = GetPointerUp();
 
-            // Hover-подъём
+            // Hover-подъём: только ближайшая по X карта может подняться
             if (_held == null)
             {
+                Vector2 local2;
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(_deckRoot, pos, null, out local2);
+                CardSlot nearest = null;
+                float nearestDx = float.MaxValue;
                 foreach (var s in _active)
                 {
-                    bool near = IsNearCard(pos, s);
+                    if (s.Rt == null) continue;
+                    float dx = Mathf.Abs(local2.x - s.Rt.anchoredPosition.x);
+                    if (dx < nearestDx) { nearestDx = dx; nearest = s; }
+                }
+                foreach (var s in _active)
+                {
+                    bool near = (s == nearest) && IsNearCard(pos, s);
                     if (near  && !s.Lifted) { s.Lifted=true;  s.AnimateTo(s.BaseX, s.BaseY+LiftY, s.BaseRot*0.4f, 0.12f); }
                     if (!near && s.Lifted)  { s.Lifted=false; s.AnimateTo(s.BaseX, s.BaseY, s.BaseRot, 0.12f); }
                 }
