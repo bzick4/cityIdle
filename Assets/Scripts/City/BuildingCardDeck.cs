@@ -339,7 +339,7 @@ namespace CityGame.City
                     return back;
                 }
                 var d = defs[i - 1];
-                string sub = _economy != null ? _economy.CostOf(d.Category, d.Kind).ToString("0") + "B" : d.Sub;
+                string sub = _economy != null ? _economy.CostOf(d.Category, d.Kind).ToString("0") + " $" : d.Sub;
                 var s = new CardSlot { IsBldCard = true, BldDef = d };
                 s.Rt = CreateCard(d.Title, sub, d.ArtBg, d.Icon);
                 return s;
