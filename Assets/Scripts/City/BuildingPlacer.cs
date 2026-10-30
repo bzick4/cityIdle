@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using CityGame;
 using CityGame.CellRoads;
 using CityGame.Roads;
 using CityGame.Sectors;
@@ -112,8 +111,9 @@ namespace CityGame.Buildings
                 return;
             }
 
-            Vector2 w = GroundRay.ToGround(PointerInput.Position, Cam);
-            Apply(ToCell(w));
+            Vector3 w = Cam.ScreenToWorldPoint(new Vector3(PointerInput.Position.x, PointerInput.Position.y,
+                -Cam.transform.position.z));
+            Apply(ToCell(new Vector2(w.x, w.y)));
         }
 
         void Apply(Vector2Int cell)

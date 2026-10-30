@@ -1,5 +1,4 @@
 using System;
-using CityGame;
 using CityGame.CellRoads;
 using UnityEngine;
 
@@ -787,9 +786,11 @@ namespace CityGame.Buildings
             {
                 Vector2 p = CityGame.Roads.PointerInput.Position;
                 Camera cam = _city.Rig.Cam;
-                Vector2 wp2 = cam != null ? GroundRay.ToGround(p, cam) : Vector2.zero;
-                var cellUnder = new Vector2Int(Mathf.FloorToInt(wp2.x / _city.CellSize), Mathf.FloorToInt(wp2.y / _city.CellSize));
-                var sectorUnder = _city.Sectors.SectorAt(wp2);
+                Vector3 wp = cam != null
+                    ? cam.ScreenToWorldPoint(new Vector3(p.x, p.y, -cam.transform.position.z))
+                    : Vector3.zero;
+                var cellUnder = new Vector2Int(Mathf.FloorToInt(wp.x / _city.CellSize), Mathf.FloorToInt(wp.y / _city.CellSize));
+                var sectorUnder = _city.Sectors.SectorAt(wp);
                 var trees = _city.Biomes.TreesOf(sectorUnder);
                 GUI.Label(new Rect(x, y + 4f, _popupRect.width - 20f, 16f),
                     string.Format("биом {0}, деревья {1}/{2}, лес-бонус {3} | авто {4} (в пути {5}, стоят {6}) накоплено {7:0.0}",

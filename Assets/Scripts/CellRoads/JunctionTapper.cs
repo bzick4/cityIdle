@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using CityGame;
 using CityGame.Buildings;
 using CityGame.Roads;
 using UnityEngine;
@@ -151,7 +150,8 @@ namespace CityGame.CellRoads
             if (PointerInput.Gesture || !PointerInput.Down) return;
             if (IsPointerBlocked != null && IsPointerBlocked(PointerInput.Position)) return;
 
-            Vector2 w = GroundRay.ToGround(PointerInput.Position, Cam);
+            Vector3 w = Cam.ScreenToWorldPoint(new Vector3(PointerInput.Position.x, PointerInput.Position.y,
+                -Cam.transform.position.z));
             var cell = new Vector2Int(Mathf.FloorToInt(w.x / CellSize), Mathf.FloorToInt(w.y / CellSize));
 
             if (_map.IsJunction(cell))

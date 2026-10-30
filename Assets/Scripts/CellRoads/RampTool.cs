@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using CityGame;
 using CityGame.Buildings;
 using CityGame.Roads;
 using UnityEngine;
@@ -70,7 +69,7 @@ namespace CityGame.CellRoads
             if (_pending) return;
             if (IsPointerBlocked != null && IsPointerBlocked(PointerInput.Position)) return;
 
-            Vector2 world = GroundRay.ToGround(PointerInput.Position, _cam);
+            Vector2 world = _cam.ScreenToWorldPoint(PointerInput.Position);
 
             var cell = new Vector2Int(
                 Mathf.FloorToInt(world.x / CellSize),

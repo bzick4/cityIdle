@@ -1,4 +1,3 @@
-using CityGame;
 using CityGame.Buildings;
 using CityGame.Roads;
 using UnityEngine;
@@ -54,7 +53,7 @@ namespace CityGame.City
         Vector2Int ToCell(Vector2 screen)
         {
             if (Cam == null) return Vector2Int.zero;
-            Vector2 w = GroundRay.ToGround(screen, Cam);
+            Vector3 w = Cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -Cam.transform.position.z));
             return new Vector2Int(Mathf.FloorToInt(w.x / CellSize), Mathf.FloorToInt(w.y / CellSize));
         }
     }

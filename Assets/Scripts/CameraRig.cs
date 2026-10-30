@@ -22,9 +22,6 @@ namespace CityGame
         public float MaxWorldWidth = 60f;
         public Color Background = new Color32(0x2B, 0x31, 0x3A, 0xFF);
 
-        [Tooltip("Угол наклона камеры, градусы (0 = вид сверху, 30 = изометрия)")]
-        public float PitchAngle = 30f;
-
         [Tooltip("Один палец двигает карту (режим «Рука»)")]
         public bool PanEnabled;
         public System.Func<Vector2, bool> IsPointerBlocked;
@@ -45,8 +42,9 @@ namespace CityGame
             Cam.orthographic = true;
             Cam.clearFlags = CameraClearFlags.SolidColor;
             Cam.backgroundColor = Background;
-            Cam.transform.rotation = Quaternion.Euler(PitchAngle, 0f, 0f);
-            SetFocal(Vector2.zero);
+            // Стартуем над центром стартового сектора.
+            Cam.transform.position = new Vector3(0f, 0f, -10f);
+            Cam.transform.rotation = Quaternion.identity;
 
             Screen.orientation = ScreenOrientation.Portrait;
             Screen.autorotateToLandscapeLeft = false;
@@ -60,17 +58,8 @@ namespace CityGame
         {
             if (Cam == null) return;
             WorldWidth = Mathf.Clamp(worldWidth, MinWorldWidth, MaxWorldWidth);
-            SetFocal(position);
+            Cam.transform.position = new Vector3(position.x, position.y, -10f);
             FitWidth();
-        }
-
-        /// <summary>Устанавливает позицию камеры так, чтобы точка focal (Z=0) оказалась в центре экрана.</summary>
-        void SetFocal(Vector2 focal)
-        {
-            const float camDist = 10f;
-            float pitchRad = PitchAngle * Mathf.Deg2Rad;
-            float yOffset = camDist * Mathf.Tan(pitchRad);
-            Cam.transform.position = new Vector3(focal.x, focal.y + yOffset, -camDist * Mathf.Cos(pitchRad));
         }
 
         /// <summary>Центрирует стартовый сектор и оставляет по краям часть соседних секторов.</summary>
@@ -90,7 +79,7 @@ namespace CityGame
 
         Vector3 ScreenToWorld(Vector2 screen)
         {
-            return GroundRay.ToGround3(screen, Cam);
+            return Cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -Cam.transform.position.z));
         }
 
         /// <summary>

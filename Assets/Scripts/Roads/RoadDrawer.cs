@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using CityGame;
 using CityGame.Buildings;
 using CityGame.CellRoads;
 using UnityEngine;
@@ -157,7 +156,9 @@ namespace CityGame.Roads
 
         Vector2 PointerWorld()
         {
-            return GroundRay.ToGround(PointerInput.Position, Cam);
+            Vector3 p = Cam.ScreenToWorldPoint(new Vector3(
+                PointerInput.Position.x, PointerInput.Position.y, -Cam.transform.position.z));
+            return new Vector2(p.x, p.y);
         }
 
         // ——— Стейт-машина рисования ———
