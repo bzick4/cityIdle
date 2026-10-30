@@ -98,6 +98,7 @@ namespace CityGame.Sectors
     public sealed class BiomeMap
     {
         [SerializeField] int _seed = 7;
+        public int Seed { get => _seed; set => _seed = value; }
 
         public Biome BiomeOf(HexCoord h)
         {

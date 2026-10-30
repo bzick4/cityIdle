@@ -9,6 +9,7 @@ namespace CityGame.Sectors
     {
         public float CellSize { get; set; } = 1f;
         [SerializeField] int _sortingOrder = -20;
+        public int SortingOrder => _sortingOrder;
 
         /// <summary>Сектора, которые сейчас «падают»: их деревья рисует SectorRenderer вместе с плиткой.</summary>
         public SectorRenderer Drops;

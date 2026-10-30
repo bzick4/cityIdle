@@ -18,6 +18,7 @@ namespace CityGame.Buildings
     {
         public float CellSize { get; set; } = 1f;
         [SerializeField] float _hexSize = 5f;
+        public float HexSize { get => _hexSize; set => _hexSize = value; }
         [SerializeField] int _openRadius = 3;
         [Tooltip("Ширина видимой карты, единиц мира")]
         [SerializeField] float _width = 15f;

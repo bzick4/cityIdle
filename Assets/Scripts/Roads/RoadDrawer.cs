@@ -19,6 +19,7 @@ namespace CityGame.Roads
 
         [Header("Что рисуем")]
         [SerializeField] RoadType _type = RoadType.Local;
+        public RoadType Type { get => _type; set => _type = value; }
         public bool OneWayMode { get; set; }
 
         [Header("Параметры (мировые единицы)")]
