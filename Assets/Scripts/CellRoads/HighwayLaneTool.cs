@@ -1,4 +1,5 @@
 using System;
+using CityGame;
 using System.Collections.Generic;
 using CityGame.Buildings;
 using CityGame.Roads;
@@ -146,7 +147,7 @@ namespace CityGame.CellRoads
 
         Vector2Int ToCell(Vector2 screen)
         {
-            Vector3 p = Cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, -Cam.transform.position.z));
+            Vector2 p = GroundRay.ToGround(screen, Cam);
             return new Vector2Int(Mathf.FloorToInt(p.x / CellSize), Mathf.FloorToInt(p.y / CellSize));
         }
 

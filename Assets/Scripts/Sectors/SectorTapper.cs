@@ -1,3 +1,4 @@
+using CityGame;
 using CityGame.Roads;
 using System;
 using UnityEngine;
@@ -60,9 +61,8 @@ namespace CityGame.Sectors
             if (PointerInput.Gesture || !PointerInput.Down) return;
             if (IsPointerBlocked != null && IsPointerBlocked(PointerInput.Position)) return;
 
-            Vector3 w = Cam.ScreenToWorldPoint(new Vector3(PointerInput.Position.x, PointerInput.Position.y,
-                -Cam.transform.position.z));
-            HexCoord h = _map.SectorAt(new Vector2(w.x, w.y));
+            Vector2 w = GroundRay.ToGround(PointerInput.Position, Cam);
+            HexCoord h = _map.SectorAt(w);
             _renderer.SetPending(_map.CanOpen(h) ? h : (HexCoord?)null);
         }
     }

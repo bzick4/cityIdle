@@ -1,4 +1,5 @@
 using System;
+using CityGame;
 using CityGame.Roads;
 using UnityEngine;
 
@@ -60,8 +61,7 @@ namespace CityGame.Water
             if (!_armed || !PointerInput.Up) return;
             _armed = false;
 
-            Vector3 w = Cam.ScreenToWorldPoint(new Vector3(PointerInput.Position.x, PointerInput.Position.y,
-                -Cam.transform.position.z));
+            Vector2 w = GroundRay.ToGround(PointerInput.Position, Cam);
             TryPlace(new Vector2Int(Mathf.FloorToInt(w.x / CellSize), Mathf.FloorToInt(w.y / CellSize)));
         }
     }
