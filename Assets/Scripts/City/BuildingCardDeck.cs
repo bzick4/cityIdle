@@ -217,7 +217,7 @@ namespace CityGame.City
             public void AnimateTo(float x, float y, float rot, float dur, float delay = 0f)
             {
                 Tween?.Kill();
-                var seq = DOTween.Sequence();
+                var seq = DOTween.Sequence().SetLink(Rt.gameObject);
                 if (delay > 0f) seq.AppendInterval(delay);
                 seq.Append(Rt.DOAnchorPos(new Vector2(x, y), dur).SetEase(Ease.OutBack))
                    .Join(Rt.DOLocalRotate(new Vector3(0, 0, rot), dur).SetEase(Ease.OutBack));
@@ -514,7 +514,7 @@ namespace CityGame.City
                 if (delay > 0f) seq.AppendInterval(delay);
                 seq.Append(rt.DOAnchorPosY(-CardH - 60f, AnimOut).SetEase(Ease.InCubic))
                    .OnComplete(() => { if (rt != null) Destroy(rt.gameObject); });
-                s.Tween = seq.Play();
+                s.Tween = seq.SetLink(rt.gameObject).Play();
             }
             float hideDelay = AnimOut + copy.Count * Stagger * 0.5f + 0.05f;
             DOVirtual.DelayedCall(hideDelay, () =>
@@ -603,8 +603,10 @@ namespace CityGame.City
                 if (_state != DeckState.Hidden && slot.Rt != null && slot.Rt.gameObject != null)
                 {
                     slot.Tween?.Kill();
-                    slot.Rt.DOAnchorPos(new Vector2(slot.BaseX, slot.BaseY), 0.20f).SetEase(Ease.OutBack);
-                    slot.Rt.DOLocalRotate(new Vector3(0, 0, slot.BaseRot), 0.20f).SetEase(Ease.OutBack);
+                    slot.Tween = DOTween.Sequence().SetLink(slot.Rt.gameObject)
+                        .Append(slot.Rt.DOAnchorPos(new Vector2(slot.BaseX, slot.BaseY), 0.20f).SetEase(Ease.OutBack))
+                        .Join(slot.Rt.DOLocalRotate(new Vector3(0, 0, slot.BaseRot), 0.20f).SetEase(Ease.OutBack))
+                        .Play();
                     slot.Lifted = false;
                 }
 
@@ -618,8 +620,10 @@ namespace CityGame.City
                 if (slot.Rt != null && slot.Rt.gameObject != null)
                 {
                     slot.Tween?.Kill();
-                    slot.Rt.DOAnchorPos(new Vector2(slot.BaseX, slot.BaseY), 0.16f).SetEase(Ease.OutCubic);
-                    slot.Rt.DOLocalRotate(new Vector3(0, 0, slot.BaseRot), 0.16f).SetEase(Ease.OutCubic);
+                    slot.Tween = DOTween.Sequence().SetLink(slot.Rt.gameObject)
+                        .Append(slot.Rt.DOAnchorPos(new Vector2(slot.BaseX, slot.BaseY), 0.16f).SetEase(Ease.OutCubic))
+                        .Join(slot.Rt.DOLocalRotate(new Vector3(0, 0, slot.BaseRot), 0.16f).SetEase(Ease.OutCubic))
+                        .Play();
                     slot.Lifted = false;
                 }
             }
