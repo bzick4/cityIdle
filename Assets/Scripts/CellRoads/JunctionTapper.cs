@@ -47,6 +47,7 @@ namespace CityGame.CellRoads
 
         void OnDisable()
         {
+            if (!gameObject.scene.isLoaded) return;
             Cancel();
             AutoType = null;
         }
