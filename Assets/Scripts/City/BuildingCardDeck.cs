@@ -360,11 +360,16 @@ namespace CityGame.City
             });
         }
 
-        void ShowJunctions()
+        void ShowJunctions() => ShowJunctionsInternal(backToRoads: true);
+
+        /// <summary>Показать карточки типов развилки при редактировании существующей.</summary>
+        public void ShowJunctionsForEdit() => ShowJunctionsInternal(backToRoads: false);
+
+        void ShowJunctionsInternal(bool backToRoads)
         {
             ClearActive();
             _state = DeckState.SecondLevel;
-            _backAction = () => ShowTools(_roadDefs);
+            _backAction = backToRoads ? (System.Action)(() => ShowTools(_roadDefs)) : HideAll;
             _canvas.gameObject.SetActive(true);
             UpdateDeckY();
 

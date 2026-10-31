@@ -20,6 +20,8 @@ namespace CityGame.CellRoads
 
         /// <summary>Показать сообщение игроку.</summary>
         public event Action<string> Message;
+        /// <summary>Срабатывает когда пользователь выбрал развилку на карте (HasSelection стал true).</summary>
+        public event Action SelectionChanged;
 
         CellRoadMap _map;
         Economy _economy;
@@ -137,6 +139,7 @@ namespace CityGame.CellRoads
             Selected = cell;
             Pending = _map.TypeAt(cell);
             _map.SetPreview(cell, Pending);
+            SelectionChanged?.Invoke();
         }
 
         void Update()

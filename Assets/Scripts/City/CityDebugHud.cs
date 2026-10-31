@@ -813,7 +813,7 @@ namespace CityGame.Buildings
         float DrawJunction(float w, float top)
         {
             JunctionTapper jt = _city.JunctionTool;
-            if (jt == null || !jt.HasSelection)
+            if (jt == null || !jt.HasSelection || _city.CardDeck != null)
             {
                 _junctionRect = Rect.zero;
                 return top;

@@ -494,9 +494,23 @@ namespace CityGame.Buildings
             CardDeck.Bind(Placer, Economy, _hud);
             CardDeck.ToolRequested += tool =>
             {
-                if (tool == Tool.Service) SelectService(CardDeck.LastSelectedService);
+                if (tool == Tool.Service) { SelectService(CardDeck.LastSelectedService); return; }
+                if (tool == Tool.Junction && JunctionTool.HasSelection && CardDeck.LastSelectedJunctionType.HasValue)
+                {
+                    // Редактирование существующей развилки — применяем выбор напрямую.
+                    JunctionTool.Choose(CardDeck.LastSelectedJunctionType.Value);
+                    JunctionTool.Apply();
+                    CardDeck.HideAll();
+                    return;
+                }
                 if (tool == Tool.Junction) JunctionTool.AutoType = CardDeck.LastSelectedJunctionType;
                 Select(tool);
+            };
+
+            JunctionTool.SelectionChanged += () =>
+            {
+                if (JunctionTool.HasSelection && CardDeck != null)
+                    CardDeck.ShowJunctionsForEdit();
             };
 
             Events = GetOrAdd<EventSystem>();
