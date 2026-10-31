@@ -76,6 +76,7 @@ namespace CityGame.Buildings
         public BuildingTapper BuildingTapper { get; private set; }
         public CityCardView CardView { get; private set; }
         public BuildingCardDeck CardDeck { get; private set; }
+        public LevelSystem Levels { get; private set; }
 
         /// <summary>Штрих выбранного инструмента (дорога, шоссе, односторонняя, канал, съезд) или null.</summary>
         public IRoadStroke ActiveStroke
@@ -236,6 +237,8 @@ namespace CityGame.Buildings
             foreach (Vector2Int c in Ports.Cells) data.ports.Add(new CellSave { x = c.x, y = c.y });
             foreach (Vector2Int c in BusStations.Cells) data.buses.Add(new CellSave { x = c.x, y = c.y });
             data.dayHour = Day != null ? Day.Hour : -1f;
+            data.playerLevel = Levels.Level;
+            data.playerXp    = Levels.Xp;
 
             return data;
         }
@@ -296,6 +299,7 @@ namespace CityGame.Buildings
 
             Economy.RestoreMoney(data.money);
             if (data.camWidth > 0f) Rig.SetView(new Vector2(data.camX, data.camY), data.camWidth);
+            if (data.playerLevel > 0) Levels.Restore(data.playerLevel, data.playerXp);
         }
 
         void AutoSave()
@@ -322,6 +326,7 @@ namespace CityGame.Buildings
             _graphSync = new CellRoadGraphSync(RoadMap, RoadNetwork, CellSize, Ramps);
 
             Model = new CityModel();
+            Levels = new LevelSystem();
 
             Sectors = new SectorMap(HexSize);
             _biomeMap = new BiomeMap { Seed = seed };
@@ -518,6 +523,33 @@ namespace CityGame.Buildings
             var evRenderer = GetOrAdd<EventRenderer>();
             evRenderer.CellSize = CellSize;
             evRenderer.Bind(Events);
+
+            // XP за здания
+            Model.CellAdded += cell =>
+            {
+                Levels.AddXp(LevelSystem.XpForBuilding(cell.Category, cell.Kind));
+                if (CardDeck != null) CardDeck.RefreshUnlocks(Levels);
+            };
+
+            // XP за открытие сектора
+            int _prevSectorCount = Sectors.OpenCount;
+            Sectors.Changed += () =>
+            {
+                int now = Sectors.OpenCount;
+                int delta = now - _prevSectorCount;
+                _prevSectorCount = now;
+                if (delta > 0)
+                {
+                    Levels.AddXp(LevelSystem.XpPerSector * delta);
+                    if (CardDeck != null) CardDeck.RefreshUnlocks(Levels);
+                }
+            };
+
+            Levels.LevelUp += lvl =>
+            {
+                if (_hud != null) _hud.ShowLevelUp(Levels.LevelUpMessage(lvl));
+                if (CardDeck != null) CardDeck.RefreshUnlocks(Levels);
+            };
 
             Started = true;
             InvokeRepeating(nameof(AutoSave), _autosaveSeconds, _autosaveSeconds);

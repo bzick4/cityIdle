@@ -16,6 +16,7 @@ namespace CityGame.Sectors
         readonly HashSet<HexCoord> _frontier = new HashSet<HexCoord>();
 
         public IEnumerable<HexCoord> Open => _open;
+        public int OpenCount => _open.Count;
         /// <summary>Закрытые сектора, граничащие с открытой областью. Их можно открыть.</summary>
         public IEnumerable<HexCoord> Frontier => _frontier;
 

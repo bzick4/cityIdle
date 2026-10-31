@@ -33,6 +33,9 @@ namespace CityGame.Save
         public List<CellSave> buses = new List<CellSave>();
         /// <summary>Час суток 0..24. Меньше нуля: в старых сохранениях нет, берём час старта.</summary>
         public float dayHour = -1f;
+        /// <summary>Уровень игрока (1–5). Ноль — в старых сохранениях нет, считаем за 1.</summary>
+        public int playerLevel;
+        public int playerXp;
         /// <summary>Узлы свободного графа дорог (версия 2+).</summary>
         public List<FreeRoadNodeSave> freeNodes = new List<FreeRoadNodeSave>();
         /// <summary>Рёбра свободного графа дорог (версия 2+).</summary>

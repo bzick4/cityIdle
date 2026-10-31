@@ -28,6 +28,7 @@ namespace CityGame.City
         BuildingPlacer _placer;
         Economy        _economy;
         CityDebugHud   _hud;
+        LevelSystem    _levels;
         Canvas         _canvas;
         RectTransform  _deckRoot;
 
@@ -265,6 +266,8 @@ namespace CityGame.City
         //  Public API
         // ──────────────────────────────────────────────────────────
 
+        public void RefreshUnlocks(LevelSystem levels) => _levels = levels;
+
         public void ToggleDeck()
         {
             if (_state == DeckState.Hidden) ShowCategories();
@@ -307,7 +310,8 @@ namespace CityGame.City
             _canvas.gameObject.SetActive(true);
             UpdateDeckY();
 
-            SpawnFan(defs.Length + 1, i =>
+            var filtered = FilterTools(defs);
+            SpawnFan(filtered.Length + 1, i =>
             {
                 if (i == 0)
                 {
@@ -315,12 +319,21 @@ namespace CityGame.City
                     back.Rt = CreateCard("", "назад", ART_BACK, TexBack());
                     return back;
                 }
-                var d = defs[i - 1];
+                var d = filtered[i - 1];
                 string toolSub = ToolSubLabel(d.Tool);
                 var s = new CardSlot { ToolDef = d };
                 s.Rt = CreateCard(d.Title, toolSub, d.ArtBg, d.Icon);
                 return s;
             });
+        }
+
+        ToolDef[] FilterTools(ToolDef[] defs)
+        {
+            if (_levels == null) return defs;
+            var list = new System.Collections.Generic.List<ToolDef>(defs.Length);
+            foreach (var d in defs)
+                if (_levels.IsToolUnlocked(d.Tool)) list.Add(d);
+            return list.ToArray();
         }
 
         string ToolSubLabel(Tool tool)
@@ -344,7 +357,8 @@ namespace CityGame.City
             _canvas.gameObject.SetActive(true);
             UpdateDeckY();
 
-            SpawnFan(defs.Length + 1, i =>
+            var filtered = FilterBuildings(defs);
+            SpawnFan(filtered.Length + 1, i =>
             {
                 if (i == 0)
                 {
@@ -352,12 +366,21 @@ namespace CityGame.City
                     back.Rt = CreateCard("", "назад", ART_BACK, TexBack());
                     return back;
                 }
-                var d = defs[i - 1];
+                var d = filtered[i - 1];
                 string sub = _economy != null ? _economy.CostOf(d.Category, d.Kind).ToString("0") + " $" : d.Sub;
                 var s = new CardSlot { IsBldCard = true, BldDef = d };
                 s.Rt = CreateCard(d.Title, sub, d.ArtBg, d.Icon);
                 return s;
             });
+        }
+
+        BldDef[] FilterBuildings(BldDef[] defs)
+        {
+            if (_levels == null) return defs;
+            var list = new System.Collections.Generic.List<BldDef>(defs.Length);
+            foreach (var d in defs)
+                if (_levels.IsBuildingUnlocked(d.Category, d.Kind)) list.Add(d);
+            return list.ToArray();
         }
 
         void ShowJunctions() => ShowJunctionsInternal(backToRoads: true);

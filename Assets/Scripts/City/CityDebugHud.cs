@@ -118,6 +118,8 @@ namespace CityGame.Buildings
         void OnEventMsg(string t) => ShowToast(t, 2.5f);
         void ShowToast(string t, float dur) { _toast = t; _toastUntil = Time.unscaledTime + dur; }
 
+        public void ShowLevelUp(string msg) => ShowToast(msg, 4f);
+
         void OnDestroy()
         {
             if (_city != null)
@@ -383,6 +385,26 @@ namespace CityGame.Buildings
                 _moneyBar = string.Format("{0:0} $   +{1:0.0}/с", _cachedMoney, _cachedIncome);
             }
             GUI.Label(new Rect(textRect.x, textRect.y, textRect.width, 28f), _moneyBar, _lblBig);
+
+            // XP-полоска под деньгами
+            if (_city.Levels != null)
+            {
+                float xpW = textRect.width;
+                float xpH = 4f;
+                float xpY = textRect.y + 26f;
+                var xpBg = new Rect(textRect.x, xpY, xpW, xpH);
+                GUI.color = new Color(0f, 0f, 0f, 0.12f);
+                GUI.DrawTexture(xpBg, Texture2D.whiteTexture);
+                float fill = _city.Levels.XpFraction;
+                if (fill > 0f)
+                {
+                    var xpFill = new Rect(textRect.x, xpY, xpW * fill, xpH);
+                    GUI.color = new Color32(0x8F, 0xE0, 0xCE, 0xFF);
+                    GUI.DrawTexture(xpFill, Texture2D.whiteTexture);
+                }
+                GUI.color = Color.white;
+            }
+
             string tool = Names[(int)_city.CurrentTool];
             if (_city.CurrentTool == Tool.Service) tool += ": " + ServiceSpecs.Title(_city.CurrentService);
             GUI.Label(new Rect(textRect.x, textRect.y + 26f, textRect.width, 20f),
