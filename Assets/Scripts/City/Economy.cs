@@ -54,6 +54,7 @@ namespace CityGame.Buildings
         public event Action<District, float> TaxCollected;
         public event Action<float> MoneyChanged;
         public event Action Spent;
+        public event Action CantAfford;
 
         CityModel _model;
         ServiceCoverage _coverage;
@@ -122,7 +123,7 @@ namespace CityGame.Buildings
 
         public bool TrySpend(float amount)
         {
-            if (Money < amount) return false;
+            if (Money < amount) { CantAfford?.Invoke(); return false; }
             Money -= amount;
             MoneyChanged?.Invoke(Money);
             Spent?.Invoke();

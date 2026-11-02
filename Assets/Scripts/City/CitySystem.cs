@@ -556,6 +556,10 @@ namespace CityGame.Buildings
             if (data != null) Apply(data);
             else Rig.SetStartView(Vector2.zero, HexSize, InitialNeighborVisibleFraction);
 
+            // Звук подключается после Apply, чтобы не ловить события загрузки.
+            var sound = GetOrAdd<SoundSystem>();
+            sound.Bind(this);
+
             // Старт без инструмента: палец двигает карту. Повторный тап по активному инструменту возвращает сюда.
             Select(Tool.Pan);
         }
